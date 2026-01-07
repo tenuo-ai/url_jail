@@ -6,7 +6,6 @@ use pyo3::types::PyModule;
 
 use crate::{Error, Policy as RustPolicy, Validated as RustValidated};
 
-// Custom exception types
 pyo3::create_exception!(airlock, AirlockError, PyException);
 pyo3::create_exception!(airlock, SsrfBlocked, AirlockError);
 pyo3::create_exception!(airlock, InvalidUrl, AirlockError);
@@ -110,6 +109,52 @@ fn py_validate<'py>(py: Python<'py>, url: String, policy: PyPolicy) -> PyResult<
     })
 }
 
+/// Fetch a URL and return the response body as a string.
+/// This is the recommended way to safely fetch user-provided URLs.
+#[cfg(feature = "fetch")]
+#[pyfunction]
+#[pyo3(name = "get", signature = (url, policy = None))]
+fn py_get<'py>(
+    py: Python<'py>,
+    url: String,
+    policy: Option<PyPolicy>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let policy = policy.unwrap_or(PyPolicy::PublicOnly);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let result = crate::fetch(&url, policy.into())
+            .await
+            .map_err(to_py_err)?;
+        let body = result
+            .response
+            .text()
+            .await
+            .map_err(|e| AirlockError::new_err(e.to_string()))?;
+        Ok(body)
+    })
+}
+
+/// Synchronous version of get().
+#[cfg(feature = "fetch")]
+#[pyfunction]
+#[pyo3(name = "get_sync", signature = (url, policy = None))]
+fn py_get_sync(url: &str, policy: Option<PyPolicy>) -> PyResult<String> {
+    let policy = policy.unwrap_or(PyPolicy::PublicOnly).into();
+    let result = crate::fetch_sync(url, policy).map_err(to_py_err)?;
+
+    // Use tokio to read the body synchronously
+    let body = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| {
+            handle.block_on(async { result.response.text().await })
+        })
+    } else {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| AirlockError::new_err(e.to_string()))?;
+        rt.block_on(async { result.response.text().await })
+    };
+
+    body.map_err(|e| AirlockError::new_err(e.to_string()))
+}
+
 /// Register all Python bindings.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPolicy>()?;
@@ -117,7 +162,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_validate_sync, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate, m)?)?;
 
-    // Add exception types
+    #[cfg(feature = "fetch")]
+    {
+        m.add_function(wrap_pyfunction!(py_get, m)?)?;
+        m.add_function(wrap_pyfunction!(py_get_sync, m)?)?;
+    }
+
     m.add("AirlockError", m.py().get_type::<AirlockError>())?;
     m.add("SsrfBlocked", m.py().get_type::<SsrfBlocked>())?;
     m.add("InvalidUrl", m.py().get_type::<InvalidUrl>())?;

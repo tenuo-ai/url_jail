@@ -35,22 +35,18 @@ pub fn is_ip_blocked(ip: IpAddr, policy: Policy) -> Option<&'static str> {
 }
 
 fn is_ipv4_blocked(ip: Ipv4Addr, policy: Policy) -> Option<&'static str> {
-    // Always blocked: loopback
     if ip.is_loopback() {
         return Some("loopback address");
     }
 
-    // Always blocked: link-local (169.254.0.0/16)
     if ip.is_link_local() {
         return Some("link-local address");
     }
 
-    // Always blocked: metadata endpoints
     if is_metadata_ipv4(ip) {
         return Some("cloud metadata endpoint");
     }
 
-    // PublicOnly: block private ranges
     if policy == Policy::PublicOnly && ip.is_private() {
         return Some("private address");
     }
@@ -59,28 +55,23 @@ fn is_ipv4_blocked(ip: Ipv4Addr, policy: Policy) -> Option<&'static str> {
 }
 
 fn is_ipv6_blocked(ip: Ipv6Addr, policy: Policy) -> Option<&'static str> {
-    // Check if this is an IPv4-mapped IPv6 address
     if let Some(ipv4) = ip.to_ipv4_mapped() {
         return is_ipv4_blocked(ipv4, policy);
     }
 
-    // Always blocked: loopback (::1)
     if ip.is_loopback() {
         return Some("loopback address");
     }
 
-    // Always blocked: link-local (fe80::/10)
-    // Note: is_unicast_link_local is unstable, so we check manually
+    // is_unicast_link_local is unstable, so we check manually
     if is_ipv6_link_local(ip) {
         return Some("link-local address");
     }
 
-    // Always blocked: AWS metadata IPv6 (fd00:ec2::254)
     if is_metadata_ipv6(ip) {
         return Some("cloud metadata endpoint");
     }
 
-    // PublicOnly: block unique local addresses (fc00::/7)
     if policy == Policy::PublicOnly && is_ipv6_unique_local(ip) {
         return Some("private address");
     }
@@ -105,13 +96,12 @@ fn is_metadata_ipv4(ip: Ipv4Addr) -> bool {
 
 /// Check if IPv6 is a cloud metadata endpoint.
 fn is_metadata_ipv6(ip: Ipv6Addr) -> bool {
-    // AWS metadata IPv6: fd00:ec2::254
+    // AWS: fd00:ec2::254
     let aws_metadata: Ipv6Net = "fd00:ec2::254/128".parse().unwrap();
     if aws_metadata.contains(&ip) {
         return true;
     }
 
-    // Also check IPv4-mapped versions of metadata IPs
     if let Some(ipv4) = ip.to_ipv4_mapped() {
         return is_metadata_ipv4(ipv4);
     }
@@ -166,7 +156,6 @@ mod tests {
 
     #[test]
     fn test_ipv4_mapped_ipv6() {
-        // ::ffff:127.0.0.1 should be blocked as loopback
         let mapped: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
         assert!(is_ip_blocked(mapped, Policy::PublicOnly).is_some());
     }

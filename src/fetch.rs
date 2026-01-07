@@ -54,12 +54,10 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
             });
         }
 
-        // Validate this URL
         let validated = validate(&current_url, policy).await.map_err(|e| {
             if chain.is_empty() {
-                e // First URL, return original error
+                e
             } else {
-                // This is a redirect - wrap in RedirectBlocked
                 Error::RedirectBlocked {
                     original_url: url.to_string(),
                     redirect_url: current_url.clone(),
@@ -70,8 +68,7 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
 
         chain.push(validated.clone());
 
-        // Create client with resolver override to connect to validated IP
-        // This ensures TLS SNI works correctly while connecting to our verified IP
+        // Resolver override ensures we connect to the validated IP while TLS SNI works correctly
         let client = Client::builder()
             .redirect(RedirectPolicy::none())
             .resolve(
@@ -84,7 +81,6 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
                 message: e.to_string(),
             })?;
 
-        // Make request - reqwest will use our resolved IP for this host
         let response = client
             .get(&validated.url)
             .send()
@@ -94,7 +90,6 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
                 message: e.to_string(),
             })?;
 
-        // Check if this is a redirect
         if response.status().is_redirection() {
             let location = response
                 .headers()
@@ -105,12 +100,10 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
                     message: "Redirect without Location header".to_string(),
                 })?;
 
-            // Resolve relative URLs
             current_url = resolve_redirect_url(&validated.url, location)?;
             continue;
         }
 
-        // Not a redirect - we're done
         return Ok(FetchResult { response, chain });
     }
 
@@ -151,7 +144,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_simple() {
-        // This test requires network access
         let result = fetch("https://httpbin.org/get", Policy::PublicOnly).await;
         assert!(result.is_ok());
         let result = result.unwrap();
@@ -160,7 +152,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_redirect() {
-        // httpbin.org/redirect/1 redirects once
         let result = fetch("https://httpbin.org/redirect/1", Policy::PublicOnly).await;
         assert!(result.is_ok());
         let result = result.unwrap();
@@ -169,7 +160,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_blocked_ip() {
-        // Direct blocked IP should fail
         let result = fetch("http://127.0.0.1/", Policy::PublicOnly).await;
         assert!(result.is_err());
     }

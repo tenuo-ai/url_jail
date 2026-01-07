@@ -1,6 +1,6 @@
 //! URL validation with DNS resolution.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use hickory_resolver::TokioResolver;
 
@@ -26,6 +26,13 @@ pub struct Validated {
 
     /// Whether HTTPS.
     pub https: bool,
+}
+
+impl Validated {
+    /// Get the socket address to connect to.
+    pub fn to_socket_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.ip, self.port)
+    }
 }
 
 /// Validate a URL, resolve DNS, and check the IP against the policy.
@@ -56,10 +63,8 @@ pub struct Validated {
 /// - DNS resolution fails
 /// - The resolved IP is blocked by the policy
 pub async fn validate(url: &str, policy: Policy) -> Result<Validated, Error> {
-    // Step 1: Parse and normalize
     let safe_url = SafeUrl::parse(url)?;
 
-    // Step 2: Check hostname blocklist
     if let Some(blocked_host) = is_hostname_blocked(safe_url.host()) {
         return Err(Error::hostname_blocked(
             url,
@@ -68,10 +73,8 @@ pub async fn validate(url: &str, policy: Policy) -> Result<Validated, Error> {
         ));
     }
 
-    // Step 3: Resolve DNS
     let ip = resolve_dns(safe_url.host()).await?;
 
-    // Step 4: Check IP against policy
     if let Some(reason) = is_ip_blocked(ip, policy) {
         return Err(Error::ssrf_blocked(url, ip, reason));
     }
@@ -93,12 +96,9 @@ pub async fn validate(url: &str, policy: Policy) -> Result<Validated, Error> {
 /// This function works both inside and outside of a Tokio runtime.
 /// When called from outside a runtime, it creates a temporary one.
 pub fn validate_sync(url: &str, policy: Policy) -> Result<Validated, Error> {
-    // Try to use an existing runtime first
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        // We're inside a runtime, use block_in_place
         tokio::task::block_in_place(|| handle.block_on(validate(url, policy)))
     } else {
-        // No runtime, create a temporary one
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| Error::dns_error("runtime", e.to_string()))?;
         rt.block_on(validate(url, policy))
@@ -107,13 +107,11 @@ pub fn validate_sync(url: &str, policy: Policy) -> Result<Validated, Error> {
 
 /// Resolve a hostname to an IP address.
 async fn resolve_dns(host: &str) -> Result<IpAddr, Error> {
-    // Handle literal IP addresses (including bracketed IPv6)
     let host_str = host.trim_start_matches('[').trim_end_matches(']');
     if let Ok(ip) = host_str.parse::<IpAddr>() {
         return Ok(ip);
     }
 
-    // Resolve hostname via DNS using the builder API
     let resolver = TokioResolver::builder_tokio()
         .map_err(|e| Error::dns_error(host, e.to_string()))?
         .build();
@@ -123,7 +121,6 @@ async fn resolve_dns(host: &str) -> Result<IpAddr, Error> {
         .await
         .map_err(|e| Error::dns_error(host, e.to_string()))?;
 
-    // Take the first IP
     response
         .iter()
         .next()
@@ -136,7 +133,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_public_ip() {
-        // example.com should resolve to a public IP
         let result = validate("https://example.com/", Policy::PublicOnly).await;
         assert!(result.is_ok());
     }
@@ -163,9 +159,6 @@ mod tests {
     async fn test_private_ip_policy() {
         let result = validate("http://192.168.1.1/", Policy::PublicOnly).await;
         assert!(result.is_err());
-
-        // AllowPrivate should allow private IPs
-        // Note: This will fail if 192.168.1.1 doesn't exist, but that's expected behavior
     }
 
     #[tokio::test]
