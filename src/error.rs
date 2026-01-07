@@ -25,6 +25,25 @@ pub enum Error {
     /// DNS resolution failed.
     #[error("DNS error for {host}: {message}")]
     DnsError { host: String, message: String },
+
+    /// A redirect pointed to a blocked URL.
+    #[cfg(feature = "fetch")]
+    #[error("Redirect blocked: {redirect_url} - {reason}")]
+    RedirectBlocked {
+        original_url: String,
+        redirect_url: String,
+        reason: String,
+    },
+
+    /// Too many redirects.
+    #[cfg(feature = "fetch")]
+    #[error("Too many redirects (max {max})")]
+    TooManyRedirects { url: String, max: u8 },
+
+    /// HTTP request failed.
+    #[cfg(feature = "fetch")]
+    #[error("HTTP error: {message}")]
+    HttpError { url: String, message: String },
 }
 
 impl Error {

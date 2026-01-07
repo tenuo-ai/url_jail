@@ -142,7 +142,7 @@ fn reject_non_standard_ip_in_raw_url(url: &str) -> Result<(), Error> {
 
     // Find the host portion (before /, ?, #, or :port)
     let host_end = after_scheme
-        .find(|c| c == '/' || c == '?' || c == '#')
+        .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
 
     let authority = &after_scheme[..host_end];

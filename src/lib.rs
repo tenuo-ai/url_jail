@@ -24,10 +24,16 @@ mod policy;
 mod safe_url;
 mod validate;
 
+#[cfg(feature = "fetch")]
+mod fetch;
+
 pub use error::Error;
 pub use policy::Policy;
 pub use safe_url::SafeUrl;
 pub use validate::{validate, validate_sync, Validated};
+
+#[cfg(feature = "fetch")]
+pub use fetch::{fetch, fetch_sync, FetchResult};
 
 #[cfg(feature = "python")]
 mod python;
