@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "airlock"
+name = "url_jail"
 version = "0.1.0"
 description = "SSRF-safe URL validation for Python"
 readme = "README.md"

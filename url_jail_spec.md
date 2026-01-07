@@ -1,4 +1,4 @@
-# Specification: `airlock`
+# Specification: `url_jail`
 
 **Version:** 0.1.0
 
@@ -8,9 +8,9 @@
 
 ## 1. Overview
 
-`airlock` validates URLs and resolved IPs to prevent Server-Side Request Forgery (SSRF). It does not make HTTP requests itself—it tells you whether a URL is safe to fetch and which IP to connect to.
+`url_jail` validates URLs and resolved IPs to prevent Server-Side Request Forgery (SSRF). It does not make HTTP requests itself—it tells you whether a URL is safe to fetch and which IP to connect to.
 
-Like `path_jail` prevents path traversal and `safe_unzip` prevents Zip Slip, `airlock` prevents SSRF. Same philosophy: security by default, minimal API, zero configuration required.
+Like `path_jail` prevents path traversal and `safe_unzip` prevents Zip Slip, `url_jail` prevents SSRF. Same philosophy: security by default, minimal API, zero configuration required.
 
 ---
 
@@ -35,7 +35,7 @@ SSRF attacks exploit this to:
 ## 3. The Solution
 
 ```python
-from airlock import validate, Policy
+from url_jail import validate, Policy
 
 # Validate before fetching
 result = validate("http://169.254.169.254/credentials", Policy.PUBLIC_ONLY)
@@ -49,7 +49,7 @@ response = requests.get("https://example.com/api")
 ```
 
 ```rust
-use airlock::{validate, Policy};
+use url_jail::{validate, Policy};
 
 let result = validate("https://example.com/api", Policy::PublicOnly).await?;
 // result.ip = 93.184.216.34
@@ -78,7 +78,7 @@ let result = validate("https://example.com/api", Policy::PublicOnly).await?;
 ### Core Functions
 
 ```rust
-use airlock::{validate, validate_sync, Policy, Validated};
+use url_jail::{validate, validate_sync, Policy, Validated};
 
 // Async validation (requires tokio runtime)
 let result: Validated = validate(
@@ -133,7 +133,7 @@ pub enum Policy {
 ### URL Parsing Only
 
 ```rust
-use airlock::SafeUrl;
+use url_jail::SafeUrl;
 
 // Parse and normalize without DNS resolution
 let url = SafeUrl::parse("https://EXAMPLE.COM./path")?;
@@ -148,7 +148,7 @@ assert_eq!(url.path(), "/path");
 ### Core Functions
 
 ```python
-from airlock import validate, validate_sync, Policy
+from url_jail import validate, validate_sync, Policy
 
 # Async validation
 result = await validate("https://example.com", Policy.PUBLIC_ONLY)
@@ -166,7 +166,7 @@ print(result.https)   # True
 ### Error Handling
 
 ```python
-from airlock import validate_sync, SsrfBlocked, InvalidUrl
+from url_jail import validate_sync, SsrfBlocked, InvalidUrl
 
 try:
     result = validate_sync(user_input, Policy.PUBLIC_ONLY)
@@ -221,12 +221,12 @@ Validated {
 
 ## 8. Using with HTTP Clients
 
-`airlock` validates. You fetch. This gives you control over the HTTP client.
+`url_jail` validates. You fetch. This gives you control over the HTTP client.
 
 ### Python + requests
 
 ```python
-from airlock import validate_sync, Policy
+from url_jail import validate_sync, Policy
 import requests
 
 result = validate_sync(user_url, Policy.PUBLIC_ONLY)
@@ -238,7 +238,7 @@ response = requests.get(result.url)
 ### Python + httpx (async)
 
 ```python
-from airlock import validate, Policy
+from url_jail import validate, Policy
 import httpx
 
 async def safe_fetch(url: str) -> str:
@@ -253,7 +253,7 @@ async def safe_fetch(url: str) -> str:
 For DNS rebinding protection, use reqwest's resolver override:
 
 ```rust
-use airlock::{validate, Policy};
+use url_jail::{validate, Policy};
 use reqwest::Client;
 use std::net::SocketAddr;
 
@@ -381,22 +381,22 @@ pub enum Error {
 ### Python
 
 ```python
-class AirlockError(Exception):
-    """Base class for airlock errors"""
+class UrlJailError(Exception):
+    """Base class for url_jail errors"""
     pass
 
-class SsrfBlocked(AirlockError):
+class SsrfBlocked(UrlJailError):
     """IP address is blocked by policy"""
     url: str
     ip: str
     reason: str
 
-class InvalidUrl(AirlockError):
+class InvalidUrl(UrlJailError):
     """Invalid URL syntax or forbidden scheme"""
     url: str
     reason: str
 
-class DnsError(AirlockError):
+class DnsError(UrlJailError):
     """DNS resolution failed"""
     host: str
 ```
@@ -405,14 +405,14 @@ class DnsError(AirlockError):
 
 ## 13. Integration with Tenuo
 
-`airlock` handles network safety. Tenuo handles authorization.
+`url_jail` handles network safety. Tenuo handles authorization.
 
 ```python
-from airlock import validate_sync, Policy
+from url_jail import validate_sync, Policy
 from tenuo import Warrant
 
 def fetch_tool(url: str, warrant: Warrant) -> str:
-    # 1. Validate URL and resolve DNS (airlock)
+    # 1. Validate URL and resolve DNS (url_jail)
     result = validate_sync(url, Policy.PUBLIC_ONLY)
     
     # 2. Check authorization (tenuo)
@@ -454,7 +454,7 @@ requires = ["maturin>=1.0"]
 
 ## 15. Comparison
 
-| | airlock | requests | urllib |
+| | url_jail | requests | urllib |
 |---|---------|----------|--------|
 | SSRF protection | ✅ | ❌ | ❌ |
 | Metadata blocking | ✅ | ❌ | ❌ |
@@ -492,7 +492,7 @@ requires = ["maturin>=1.0"]
 - [ ] Python error types
 - [ ] Documentation
 - [ ] `cargo publish`
-- [ ] `pip install airlock` (maturin)
+- [ ] `pip install url_jail` (maturin)
 
 ### v0.2
 
@@ -536,7 +536,7 @@ validate_sync("http://169.254.169.254/", Policy.ALLOW_PRIVATE)   # Metadata alwa
 ## 19. README
 
 ```markdown
-# airlock
+# url_jail
 
 SSRF-safe URL validation for Python and Rust.
 
@@ -550,7 +550,7 @@ response = requests.get(user_url)  # 💀 AWS credentials leaked
 ## The Solution
 
 ```python
-from airlock import validate_sync, Policy
+from url_jail import validate_sync, Policy
 
 result = validate_sync(user_url, Policy.PUBLIC_ONLY)
 # Raises SsrfBlocked if URL points to internal/metadata IPs
@@ -561,12 +561,12 @@ response = requests.get(result.url)  # ✅ Safe
 ## Installation
 
 ```bash
-pip install airlock
+pip install url_jail
 ```
 
 ```toml
 [dependencies]
-airlock = "0.1"
+url_jail = "0.1"
 ```
 
 ## What's Blocked

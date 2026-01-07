@@ -1,10 +1,10 @@
 [package]
-name = "airlock"
+name = "url_jail"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "SSRF-safe URL validation for Rust and Python"
-repository = "https://github.com/tenuo-ai/airlock"
+repository = "https://github.com/tenuo-ai/url_jail"
 keywords = ["ssrf", "security", "url", "validation"]
 categories = ["web-programming", "network-programming"]
 

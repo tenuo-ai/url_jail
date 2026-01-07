@@ -1,4 +1,4 @@
-//! Python bindings for airlock.
+//! Python bindings for url_jail.
 
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -6,10 +6,10 @@ use pyo3::types::PyModule;
 
 use crate::{Error, Policy as RustPolicy, Validated as RustValidated};
 
-pyo3::create_exception!(airlock, AirlockError, PyException);
-pyo3::create_exception!(airlock, SsrfBlocked, AirlockError);
-pyo3::create_exception!(airlock, InvalidUrl, AirlockError);
-pyo3::create_exception!(airlock, DnsError, AirlockError);
+pyo3::create_exception!(url_jail, UrlJailError, PyException);
+pyo3::create_exception!(url_jail, SsrfBlocked, UrlJailError);
+pyo3::create_exception!(url_jail, InvalidUrl, UrlJailError);
+pyo3::create_exception!(url_jail, DnsError, UrlJailError);
 
 /// Policy enum for Python.
 #[pyclass(name = "Policy", eq, eq_int)]
@@ -80,11 +80,11 @@ fn to_py_err(e: Error) -> PyErr {
         )),
         #[cfg(feature = "fetch")]
         Error::TooManyRedirects { url, max } => {
-            AirlockError::new_err(format!("{} - too many redirects (max {})", url, max))
+            UrlJailError::new_err(format!("{} - too many redirects (max {})", url, max))
         }
         #[cfg(feature = "fetch")]
         Error::HttpError { url, message } => {
-            AirlockError::new_err(format!("{} - HTTP error: {}", url, message))
+            UrlJailError::new_err(format!("{} - HTTP error: {}", url, message))
         }
     }
 }
@@ -121,14 +121,12 @@ fn py_get<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     let policy = policy.unwrap_or(PyPolicy::PublicOnly);
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let result = crate::fetch(&url, policy.into())
-            .await
-            .map_err(to_py_err)?;
+        let result = crate::fetch(&url, policy.into()).await.map_err(to_py_err)?;
         let body = result
             .response
             .text()
             .await
-            .map_err(|e| AirlockError::new_err(e.to_string()))?;
+            .map_err(|e| UrlJailError::new_err(e.to_string()))?;
         Ok(body)
     })
 }
@@ -143,16 +141,14 @@ fn py_get_sync(url: &str, policy: Option<PyPolicy>) -> PyResult<String> {
 
     // Use tokio to read the body synchronously
     let body = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| {
-            handle.block_on(async { result.response.text().await })
-        })
+        tokio::task::block_in_place(|| handle.block_on(async { result.response.text().await }))
     } else {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| AirlockError::new_err(e.to_string()))?;
+        let rt =
+            tokio::runtime::Runtime::new().map_err(|e| UrlJailError::new_err(e.to_string()))?;
         rt.block_on(async { result.response.text().await })
     };
 
-    body.map_err(|e| AirlockError::new_err(e.to_string()))
+    body.map_err(|e| UrlJailError::new_err(e.to_string()))
 }
 
 /// Register all Python bindings.
@@ -168,7 +164,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(py_get_sync, m)?)?;
     }
 
-    m.add("AirlockError", m.py().get_type::<AirlockError>())?;
+    m.add("UrlJailError", m.py().get_type::<UrlJailError>())?;
     m.add("SsrfBlocked", m.py().get_type::<SsrfBlocked>())?;
     m.add("InvalidUrl", m.py().get_type::<InvalidUrl>())?;
     m.add("DnsError", m.py().get_type::<DnsError>())?;

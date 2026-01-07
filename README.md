@@ -1,4 +1,4 @@
-# airlock
+# url_jail
 
 SSRF-safe URL validation for Rust and Python.
 
@@ -12,14 +12,14 @@ response = requests.get(user_url)  # AWS credentials leaked via 169.254.169.254
 
 **Python (recommended - full DNS rebinding protection):**
 ```python
-from airlock import get_sync
+from url_jail import get_sync
 
 body = get_sync(user_url)  # Safe! Validates URL and all redirects
 ```
 
 **Rust:**
 ```rust
-use airlock::{validate, Policy};
+use url_jail::{validate, Policy};
 use reqwest::Client;
 
 let v = validate("https://example.com/api", Policy::PublicOnly).await?;
@@ -35,15 +35,15 @@ let response = client.get(&v.url).send().await?;
 ## Installation
 
 ```bash
-pip install airlock
+pip install url_jail
 ```
 
 ```toml
 [dependencies]
-airlock = "0.1"
+url_jail = "0.1"
 
 # Enable fetch() for full redirect chain validation
-airlock = { version = "0.1", features = ["fetch"] }
+url_jail = { version = "0.1", features = ["fetch"] }
 ```
 
 ## Policies

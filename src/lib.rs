@@ -1,17 +1,17 @@
-//! # airlock
+//! # url_jail
 //!
 //! SSRF-safe URL validation for Rust and Python.
 //!
-//! `airlock` validates URLs and resolved IPs to prevent Server-Side Request Forgery (SSRF).
+//! `url_jail` validates URLs and resolved IPs to prevent Server-Side Request Forgery (SSRF).
 //! It does not make HTTP requests itself—it tells you whether a URL is safe to fetch
 //! and which IP to connect to.
 //!
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use airlock::{validate, Policy};
+//! use url_jail::{validate, Policy};
 //!
-//! # async fn example() -> Result<(), airlock::Error> {
+//! # async fn example() -> Result<(), url_jail::Error> {
 //! let result = validate("https://example.com/api", Policy::PublicOnly).await?;
 //! println!("Safe to connect to {} ({})", result.host, result.ip);
 //! # Ok(())
@@ -43,6 +43,6 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 #[pymodule]
-fn airlock(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn url_jail(m: &Bound<'_, PyModule>) -> PyResult<()> {
     python::register(m)
 }

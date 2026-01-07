@@ -3,21 +3,6 @@
 version = 4
 
 [[package]]
-name = "airlock"
-version = "0.1.0"
-dependencies = [
- "hickory-resolver",
- "idna",
- "ipnet",
- "pyo3",
- "pyo3-async-runtimes",
- "reqwest",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1376,6 +1361,21 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+]
+
+[[package]]
+name = "url_jail"
+version = "0.1.0"
+dependencies = [
+ "hickory-resolver",
+ "idna",
+ "ipnet",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]

@@ -192,7 +192,9 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
                 "decimal IP encoding not allowed",
             ));
         }
-        if host.chars().all(|c| c.is_ascii_hexdigit()) && host.chars().any(|c| c.is_ascii_alphabetic()) {
+        if host.chars().all(|c| c.is_ascii_hexdigit())
+            && host.chars().any(|c| c.is_ascii_alphabetic())
+        {
             return Err(Error::invalid_url(
                 original_url,
                 "hexadecimal IP encoding not allowed",
@@ -202,7 +204,9 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
 
     // Short-form: 127.1 → 127.0.0.1, 127.0.1 → 127.0.0.1
     if (parts.len() == 2 || parts.len() == 3)
-        && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
     {
         return Err(Error::invalid_url(
             original_url,
@@ -217,10 +221,7 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
             }
 
             // Leading zero with more digits = octal (e.g., 0177 = 127)
-            if part.len() > 1
-                && part.starts_with('0')
-                && part.chars().all(|c| c.is_ascii_digit())
-            {
+            if part.len() > 1 && part.starts_with('0') && part.chars().all(|c| c.is_ascii_digit()) {
                 return Err(Error::invalid_url(
                     original_url,
                     "octal IP encoding not allowed",

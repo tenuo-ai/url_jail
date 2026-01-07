@@ -1,4 +1,4 @@
-//! Error types for airlock.
+//! Error types for url_jail.
 
 use std::net::IpAddr;
 use thiserror::Error;
@@ -16,7 +16,11 @@ pub enum Error {
 
     /// Hostname is blocked by policy.
     #[error("SSRF blocked: {host} - {reason}")]
-    HostnameBlocked { url: String, host: String, reason: String },
+    HostnameBlocked {
+        url: String,
+        host: String,
+        reason: String,
+    },
 
     /// Invalid URL syntax or forbidden scheme.
     #[error("Invalid URL: {reason}")]
@@ -47,7 +51,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn ssrf_blocked(url: impl Into<String>, ip: IpAddr, reason: impl Into<String>) -> Self {
+    pub(crate) fn ssrf_blocked(
+        url: impl Into<String>,
+        ip: IpAddr,
+        reason: impl Into<String>,
+    ) -> Self {
         Self::SsrfBlocked {
             url: url.into(),
             ip,

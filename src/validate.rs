@@ -46,9 +46,9 @@ impl Validated {
 /// # Example
 ///
 /// ```rust,no_run
-/// use airlock::{validate, Policy};
+/// use url_jail::{validate, Policy};
 ///
-/// # async fn example() -> Result<(), airlock::Error> {
+/// # async fn example() -> Result<(), url_jail::Error> {
 /// let result = validate("https://example.com/api", Policy::PublicOnly).await?;
 /// println!("Safe to connect to {} ({})", result.host, result.ip);
 /// # Ok(())

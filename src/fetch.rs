@@ -33,9 +33,9 @@ pub struct FetchResult {
 /// # Example
 ///
 /// ```rust,no_run
-/// use airlock::{fetch, Policy};
+/// use url_jail::{fetch, Policy};
 ///
-/// # async fn example() -> Result<(), airlock::Error> {
+/// # async fn example() -> Result<(), url_jail::Error> {
 /// let result = fetch("https://httpbin.org/redirect/2", Policy::PublicOnly).await?;
 /// println!("Final URL: {}", result.response.url());
 /// println!("Followed {} redirects", result.chain.len() - 1);
