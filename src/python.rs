@@ -70,6 +70,23 @@ fn to_py_err(e: Error) -> PyErr {
         }
         Error::InvalidUrl { url, reason } => InvalidUrl::new_err(format!("{} - {}", url, reason)),
         Error::DnsError { host, message } => DnsError::new_err(format!("{} - {}", host, message)),
+        #[cfg(feature = "fetch")]
+        Error::RedirectBlocked {
+            original_url,
+            redirect_url,
+            reason,
+        } => SsrfBlocked::new_err(format!(
+            "{} redirected to blocked URL {} - {}",
+            original_url, redirect_url, reason
+        )),
+        #[cfg(feature = "fetch")]
+        Error::TooManyRedirects { url, max } => {
+            AirlockError::new_err(format!("{} - too many redirects (max {})", url, max))
+        }
+        #[cfg(feature = "fetch")]
+        Error::HttpError { url, message } => {
+            AirlockError::new_err(format!("{} - HTTP error: {}", url, message))
+        }
     }
 }
 

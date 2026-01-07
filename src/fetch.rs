@@ -3,6 +3,8 @@
 //! This module provides functions to fetch URLs while validating each redirect
 //! in the chain against the SSRF policy.
 
+use std::net::SocketAddr;
+
 use reqwest::redirect::Policy as RedirectPolicy;
 use reqwest::{Client, Response};
 
@@ -44,15 +46,6 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
     let mut current_url = url.to_string();
     let mut chain = Vec::new();
 
-    // Create client with no automatic redirects - we handle them manually
-    let client = Client::builder()
-        .redirect(RedirectPolicy::none())
-        .build()
-        .map_err(|e| Error::HttpError {
-            url: url.to_string(),
-            message: e.to_string(),
-        })?;
-
     for i in 0..=MAX_REDIRECTS {
         if i == MAX_REDIRECTS {
             return Err(Error::TooManyRedirects {
@@ -77,10 +70,23 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
 
         chain.push(validated.clone());
 
-        // Make request, connecting to the validated IP
+        // Create client with resolver override to connect to validated IP
+        // This ensures TLS SNI works correctly while connecting to our verified IP
+        let client = Client::builder()
+            .redirect(RedirectPolicy::none())
+            .resolve(
+                &validated.host,
+                SocketAddr::new(validated.ip, validated.port),
+            )
+            .build()
+            .map_err(|e| Error::HttpError {
+                url: current_url.clone(),
+                message: e.to_string(),
+            })?;
+
+        // Make request - reqwest will use our resolved IP for this host
         let response = client
             .get(&validated.url)
-            .header("Host", &validated.host)
             .send()
             .await
             .map_err(|e| Error::HttpError {

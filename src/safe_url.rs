@@ -113,12 +113,22 @@ fn normalize_host(host: &str, original_url: &str) -> Result<String, Error> {
         return Err(Error::invalid_url(original_url, "empty hostname"));
     }
 
-    // Reject bracketed hostnames that aren't IPv6
-    if normalized.starts_with('[') && !normalized.ends_with(']') {
-        return Err(Error::invalid_url(
-            original_url,
-            "invalid bracketed hostname",
-        ));
+    // Reject bracketed hostnames that aren't valid IPv6
+    if normalized.starts_with('[') {
+        if !normalized.ends_with(']') {
+            return Err(Error::invalid_url(
+                original_url,
+                "invalid bracketed hostname",
+            ));
+        }
+        // Check if content is valid IPv6
+        let inner = &normalized[1..normalized.len() - 1];
+        if inner.parse::<std::net::Ipv6Addr>().is_err() {
+            return Err(Error::invalid_url(
+                original_url,
+                "brackets only allowed for IPv6 addresses",
+            ));
+        }
     }
 
     Ok(normalized)
@@ -267,5 +277,11 @@ mod tests {
     fn test_allow_ipv6() {
         let url = SafeUrl::parse("http://[::1]/").unwrap();
         assert_eq!(url.host(), "[::1]");
+    }
+
+    #[test]
+    fn test_reject_bracketed_hostname() {
+        // Brackets only allowed for IPv6
+        assert!(SafeUrl::parse("http://[example.com]/").is_err());
     }
 }

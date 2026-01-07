@@ -9,7 +9,10 @@ use crate::Policy;
 /// Hostnames that are always blocked (checked before DNS resolution).
 const BLOCKED_HOSTNAMES: &[&str] = &[
     "metadata.google.internal",
+    "metadata.goog",
     "metadata.azure.internal",
+    "169.254.169.254", // Literal IP as hostname
+    "instance-data",   // AWS alternate (EC2-Classic)
 ];
 
 /// Check if a hostname is blocked.
