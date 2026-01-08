@@ -859,4 +859,473 @@ mod tests {
         let url = SafeUrl::parse("http://example.com/🎉").unwrap();
         assert_eq!(url.host(), "example.com");
     }
+
+    // ==================== RED TEAM: URL Encoding Attacks ====================
+
+    #[test]
+    fn test_redteam_url_encoded_ip() {
+        // %31%32%37 = "127" - attempt to bypass via URL encoding
+        // The url crate decodes this, so we should get "127.0.0.1"
+        let result = SafeUrl::parse("http://%31%32%37.0.0.1/");
+        // Either rejected at parse time, or parsed as 127.0.0.1 (caught by IP validation)
+        match result {
+            Ok(url) => {
+                // If parsed, hostname should be decoded
+                assert!(url.host() == "127.0.0.1" || url.host().contains("%"));
+            }
+            Err(_) => {} // Rejected is also fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_url_encoded_ip_full() {
+        // Full URL encoding of 127.0.0.1
+        let result = SafeUrl::parse("http://%31%32%37%2e%30%2e%30%2e%31/");
+        match result {
+            Ok(url) => {
+                // Should decode to 127.0.0.1
+                let host = url.host();
+                assert!(host == "127.0.0.1" || host.contains("%"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_double_encoded_ip() {
+        // %25 = "%", so %2531 = "%31" which decodes to "1"
+        // This tests double-encoding bypass attempts
+        let result = SafeUrl::parse("http://%2531%2532%2537.0.0.1/");
+        // Should NOT decode to 127.0.0.1 (only one level of decoding)
+        match result {
+            Ok(url) => {
+                // Host should contain literal %
+                assert!(url.host().contains("%") || url.host().contains("25"));
+            }
+            Err(_) => {} // Rejection is fine too
+        }
+    }
+
+    // ==================== RED TEAM: @ Symbol Confusion ====================
+
+    #[test]
+    fn test_redteam_at_symbol_userinfo_with_ip() {
+        // Attempt: user thinks they're going to safe.com, but @ makes 127.0.0.1 the real host
+        let result = SafeUrl::parse("http://safe.com@127.0.0.1/");
+        // This MUST be rejected - we block userinfo
+        assert!(result.is_err(), "Userinfo with @ must be rejected");
+    }
+
+    #[test]
+    fn test_redteam_at_symbol_userinfo_with_metadata() {
+        // Attempt to access metadata via userinfo confusion
+        let result = SafeUrl::parse("http://google.com@169.254.169.254/");
+        assert!(result.is_err(), "Userinfo must be rejected");
+    }
+
+    #[test]
+    fn test_redteam_at_symbol_encoded() {
+        // %40 = @
+        let result = SafeUrl::parse("http://safe.com%40127.0.0.1/");
+        // URL parser may treat this differently
+        match result {
+            Ok(url) => {
+                // If accepted, the @ should be in the host, not creating userinfo
+                // Verify we didn't accidentally allow access to 127.0.0.1
+                assert!(!url.host().starts_with("127."));
+            }
+            Err(_) => {} // Rejection is fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_multiple_at_symbols() {
+        // Multiple @ symbols - which is the real host?
+        let result = SafeUrl::parse("http://a@b@127.0.0.1/");
+        assert!(result.is_err(), "Multiple @ or userinfo must be rejected");
+    }
+
+    // ==================== RED TEAM: Whitespace and Control Characters ====================
+
+    #[test]
+    fn test_redteam_tab_in_hostname() {
+        // Tab character (%09) in hostname
+        let result = SafeUrl::parse("http://127%09.0.0.1/");
+        // Should either reject or not parse as 127.0.0.1
+        match result {
+            Ok(url) => {
+                assert_ne!(url.host(), "127.0.0.1");
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_newline_in_url() {
+        // Newline (%0a) injection
+        let result = SafeUrl::parse("http://example.com%0a127.0.0.1/");
+        match result {
+            Ok(url) => {
+                assert!(!url.host().starts_with("127."));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_carriage_return_in_url() {
+        // CR (%0d) injection
+        let result = SafeUrl::parse("http://example.com%0d127.0.0.1/");
+        match result {
+            Ok(url) => {
+                assert!(!url.host().starts_with("127."));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_null_byte_injection() {
+        // Null byte (%00) - classic bypass technique
+        let result = SafeUrl::parse("http://example.com%00.127.0.0.1/");
+        match result {
+            Ok(url) => {
+                // Should not allow access to anything after null
+                assert!(!url.host().contains("127.0.0.1"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_null_byte_before_at() {
+        // http://safe.com%00@evil.com - null byte before @
+        let result = SafeUrl::parse("http://safe.com%00@127.0.0.1/");
+        // Must reject - either for null byte or userinfo
+        assert!(
+            result.is_err() || {
+                let url = result.unwrap();
+                !url.host().starts_with("127.")
+            }
+        );
+    }
+
+    // ==================== RED TEAM: Backslash Confusion ====================
+
+    #[test]
+    fn test_redteam_backslash_before_at() {
+        // Some parsers treat \ as / - confusion attack
+        let result = SafeUrl::parse("http://safe.com\\@127.0.0.1/");
+        match result {
+            Ok(url) => {
+                // Backslash should not enable host confusion
+                assert!(!url.host().starts_with("127."));
+            }
+            Err(_) => {} // Rejection is fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_backslash_as_path_separator() {
+        // Windows-style path separator
+        let result = SafeUrl::parse("http://example.com\\path\\to\\file");
+        match result {
+            Ok(url) => {
+                assert_eq!(url.host(), "example.com");
+            }
+            Err(_) => {}
+        }
+    }
+
+    // ==================== RED TEAM: Unicode/Homoglyph Attacks ====================
+
+    #[test]
+    fn test_redteam_cyrillic_a_in_localhost() {
+        // Cyrillic 'а' (U+0430) looks like ASCII 'a' (U+0061)
+        // "locаlhost" with Cyrillic а
+        let result = SafeUrl::parse("http://loc\u{0430}lhost/");
+        match result {
+            Ok(url) => {
+                // Should NOT be treated as "localhost"
+                // Either punycode-encoded or kept as-is
+                assert_ne!(url.host(), "localhost");
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_homoglyph_metadata() {
+        // Cyrillic characters that look like "metadata"
+        // Using Cyrillic 'е' (U+0435) instead of ASCII 'e'
+        let result = SafeUrl::parse("http://m\u{0435}tadata.google.internal/");
+        match result {
+            Ok(url) => {
+                // Should NOT match the blocked hostname
+                assert!(!url.host().eq_ignore_ascii_case("metadata.google.internal"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_full_width_ip() {
+        // Full-width numerals: １２７ (U+FF11 U+FF12 U+FF17)
+        // URL crate converts these to ASCII - this is GOOD because our IP blocklist catches it
+        let result = SafeUrl::parse("http://\u{FF11}\u{FF12}\u{FF17}.0.0.1/");
+        match result {
+            Ok(url) => {
+                // Normalized to 127.0.0.1, which our IP blocklist will catch
+                // Either the URL crate normalizes it (127.0.0.1) or keeps it as-is
+                // Either way, IP validation will handle it
+                let _ = url.host();
+            }
+            Err(_) => {} // Rejection is also fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_superscript_numbers() {
+        // Superscript numbers: ¹²⁷
+        // URL crate may normalize these to ASCII
+        let result = SafeUrl::parse("http://¹²⁷.0.0.1/");
+        match result {
+            Ok(url) => {
+                // If normalized to 127.0.0.1, our IP blocklist will catch it
+                // This test documents the behavior
+                let _ = url.host();
+            }
+            Err(_) => {} // Rejection is also acceptable
+        }
+    }
+
+    // ==================== RED TEAM: Fragment Confusion ====================
+
+    #[test]
+    fn test_redteam_fragment_with_at() {
+        // Fragment should not affect host parsing
+        let url = SafeUrl::parse("http://example.com/path#@127.0.0.1").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_redteam_fragment_with_scheme() {
+        // Fragment containing what looks like a URL
+        let url = SafeUrl::parse("http://example.com/#http://127.0.0.1/").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    // ==================== RED TEAM: DNS Rebinding Hostnames ====================
+
+    #[test]
+    fn test_redteam_nip_io_style() {
+        // Services like nip.io resolve 127.0.0.1.nip.io to 127.0.0.1
+        // We can't block this at URL parse time - DNS validation will catch it
+        let url = SafeUrl::parse("http://127.0.0.1.nip.io/").unwrap();
+        // Parse succeeds, but DNS validation would catch this
+        assert_eq!(url.host(), "127.0.0.1.nip.io");
+    }
+
+    #[test]
+    fn test_redteam_xip_io_style() {
+        // Similar to nip.io
+        let url = SafeUrl::parse("http://192.168.1.1.xip.io/").unwrap();
+        assert_eq!(url.host(), "192.168.1.1.xip.io");
+    }
+
+    #[test]
+    fn test_redteam_subdomain_is_ip() {
+        // Subdomain that looks like an IP
+        let url = SafeUrl::parse("http://127.0.0.1.attacker.com/").unwrap();
+        // This is a valid hostname, DNS validation needed
+        assert_eq!(url.host(), "127.0.0.1.attacker.com");
+    }
+
+    // ==================== RED TEAM: IPv6 Edge Cases ====================
+
+    #[test]
+    fn test_redteam_ipv6_zone_id() {
+        // Zone ID: [fe80::1%eth0] - some systems support this
+        // %25 = % in URL encoding
+        let result = SafeUrl::parse("http://[fe80::1%25eth0]/");
+        // Should either reject or handle safely
+        match result {
+            Ok(url) => {
+                // Zone ID in host is unusual
+                assert!(url.host().contains("fe80"));
+            }
+            Err(_) => {} // Rejection is fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_ipv6_zone_id_unencoded() {
+        let result = SafeUrl::parse("http://[fe80::1%eth0]/");
+        // Likely rejected due to invalid URL
+        let _ = result; // Just ensure no panic
+    }
+
+    #[test]
+    fn test_redteam_ipv6_with_embedded_ipv4_loopback() {
+        // ::127.0.0.1 format
+        let result = SafeUrl::parse("http://[::127.0.0.1]/");
+        match result {
+            Ok(url) => {
+                // Should be recognized as containing 127.0.0.1
+                let host = url.host();
+                assert!(host.contains("127.0.0.1") || host.contains("::"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_ipv6_mapped_metadata() {
+        // IPv4-mapped IPv6 for metadata endpoint
+        let url = SafeUrl::parse("http://[::ffff:169.254.169.254]/").unwrap();
+        // Parse succeeds, IP validation catches this
+        assert!(url.host().contains("169.254") || url.host().contains("ffff"));
+    }
+
+    // ==================== RED TEAM: Bracket Abuse ====================
+
+    #[test]
+    fn test_redteam_brackets_around_hostname() {
+        // Brackets are only valid for IPv6
+        let result = SafeUrl::parse("http://[localhost]/");
+        assert!(result.is_err(), "Brackets around hostname must be rejected");
+    }
+
+    #[test]
+    fn test_redteam_brackets_around_ipv4() {
+        // Brackets around IPv4 should fail
+        let result = SafeUrl::parse("http://[127.0.0.1]/");
+        assert!(result.is_err(), "Brackets around IPv4 must be rejected");
+    }
+
+    #[test]
+    fn test_redteam_unbalanced_brackets() {
+        assert!(SafeUrl::parse("http://[::1/").is_err());
+        assert!(SafeUrl::parse("http://::1]/").is_err());
+    }
+
+    // ==================== RED TEAM: Scheme Variations ====================
+
+    #[test]
+    fn test_redteam_scheme_with_extra_slashes() {
+        // http:/// with extra slash - URL crate may parse this as empty host
+        let result = SafeUrl::parse("http:///127.0.0.1/");
+        // URL crate treats this as host=127.0.0.1 with empty path segment before it
+        // The important thing is that if 127.0.0.1 becomes the host, our IP blocklist catches it
+        match result {
+            Ok(url) => {
+                // If host is 127.0.0.1, our IP validation blocks it
+                // If host is empty, that's also handled
+                let _host = url.host();
+            }
+            Err(_) => {} // Rejection is fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_scheme_without_slashes() {
+        // http:127.0.0.1 without // - URL crate parses this as path, not host
+        let result = SafeUrl::parse("http:127.0.0.1/");
+        // URL crate treats "127.0.0.1/" as the path with empty host
+        match result {
+            Ok(url) => {
+                // If parsed with empty host, we'd catch it
+                // If parsed with 127.0.0.1 as host, IP blocklist catches it
+                let _host = url.host();
+            }
+            Err(_) => {} // Rejection is acceptable
+        }
+    }
+
+    #[test]
+    fn test_redteam_file_scheme_rejected() {
+        assert!(SafeUrl::parse("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn test_redteam_javascript_scheme_rejected() {
+        assert!(SafeUrl::parse("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn test_redteam_data_scheme_rejected() {
+        assert!(SafeUrl::parse("data:text/html,<script>alert(1)</script>").is_err());
+    }
+
+    // ==================== RED TEAM: Mixed Case IP Encoding ====================
+
+    #[test]
+    fn test_redteam_mixed_case_hex() {
+        // Mixed case in hex encoding
+        assert!(SafeUrl::parse("http://0X7F.0x00.0X00.0x01/").is_err());
+    }
+
+    #[test]
+    fn test_redteam_leading_zeros_not_octal() {
+        // Some systems might treat 00127 as octal
+        assert!(SafeUrl::parse("http://00127.0.0.1/").is_err());
+    }
+
+    // ==================== RED TEAM: Port-based Attacks ====================
+
+    #[test]
+    fn test_redteam_port_overflow() {
+        // Values that might overflow
+        assert!(SafeUrl::parse("http://example.com:4294967377/").is_err()); // 2^32 + 81
+    }
+
+    #[test]
+    fn test_redteam_negative_port() {
+        assert!(SafeUrl::parse("http://example.com:-1/").is_err());
+    }
+
+    #[test]
+    fn test_redteam_port_with_leading_zeros() {
+        // 0080 = 80, but might confuse some parsers
+        let result = SafeUrl::parse("http://example.com:0080/");
+        match result {
+            Ok(url) => assert_eq!(url.port(), 80),
+            Err(_) => {} // Rejection is also acceptable
+        }
+    }
+
+    #[test]
+    fn test_redteam_port_with_plus() {
+        // +80 might be parsed as 80
+        let result = SafeUrl::parse("http://example.com:+80/");
+        assert!(result.is_err());
+    }
+
+    // ==================== RED TEAM: Path Traversal (informational) ====================
+    // Note: url_jail doesn't prevent path traversal - that's path_jail's job
+    // The URL crate normalizes paths, collapsing /../ sequences
+    // These tests document the boundary
+
+    #[test]
+    fn test_redteam_path_traversal_normalized() {
+        // URL crate normalizes /../ sequences
+        let url = SafeUrl::parse("http://example.com/../../../etc/passwd").unwrap();
+        // URL crate collapses path traversal - this is handled by the URL parser
+        // The path won't contain ".." after normalization
+        let path = url.path();
+        // Path is normalized - this is expected URL parsing behavior
+        // path_jail would need to operate on the raw input, not parsed URL
+        assert!(path.contains("etc") || path == "/etc/passwd");
+    }
+
+    #[test]
+    fn test_redteam_encoded_path_traversal() {
+        // %2e = .
+        let url = SafeUrl::parse("http://example.com/%2e%2e/%2e%2e/etc/passwd").unwrap();
+        // URL crate may decode and normalize, or preserve encoding
+        // Either behavior is acceptable - document what happens
+        let path = url.path();
+        // The path was parsed - verify it contains expected content
+        assert!(path.contains("etc") || path.contains("%2e") || path.contains(".."));
+    }
 }

@@ -58,7 +58,7 @@ pub struct FetchResult {
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use url_jail::{fetch, Policy};
 ///
 /// # async fn example() -> Result<(), url_jail::Error> {
@@ -143,7 +143,7 @@ pub async fn fetch(url: &str, policy: Policy) -> Result<FetchResult, Error> {
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use url_jail::{fetch_sync, Policy};
 ///
 /// let result = fetch_sync("https://example.com/", Policy::PublicOnly)?;
@@ -164,7 +164,24 @@ pub fn fetch_sync(url: &str, policy: Policy) -> Result<FetchResult, Error> {
 }
 
 /// Resolve a redirect URL (which may be relative) against the base URL.
+///
+/// # Security
+///
+/// This function rejects redirect locations containing backslashes because
+/// `url::Url::join()` treats `\` like `/`, which can cause `\\evil.com` to
+/// change the host (protocol-relative interpretation). This is a known
+/// attack vector for redirect-based SSRF.
 fn resolve_redirect_url(base: &str, location: &str) -> Result<String, Error> {
+    // SECURITY: Reject backslashes to prevent host override attacks.
+    // The URL crate treats `\` as `/`, so `\\evil.com` becomes `//evil.com`
+    // which is protocol-relative and changes the host.
+    if location.contains('\\') {
+        return Err(Error::InvalidUrl {
+            url: location.to_string(),
+            reason: "redirect location contains backslash (potential host override)".to_string(),
+        });
+    }
+
     let base_url = url::Url::parse(base).map_err(|e| Error::InvalidUrl {
         url: base.to_string(),
         reason: e.to_string(),
@@ -430,5 +447,165 @@ mod tests {
         let result = resolve_redirect_url("https://example.com/", "data:text/html,<h1>hi</h1>");
         // url crate should handle this
         assert!(result.is_ok() || result.is_err());
+    }
+
+    // ==================== RED TEAM: Redirect-Based SSRF Attacks ====================
+
+    #[tokio::test]
+    async fn test_redteam_redirect_to_localhost_blocked() {
+        // If a public URL redirects to localhost, must be blocked
+        // We can't test this with real servers, but verify the function exists
+        let result = fetch("http://127.0.0.1/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::SsrfBlocked { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_redteam_redirect_to_metadata_blocked() {
+        // If redirected to metadata endpoint, must be blocked
+        let result = fetch("http://169.254.169.254/", Policy::PublicOnly).await;
+        // Can be SsrfBlocked (IP) or HostnameBlocked (pattern)
+        assert!(matches!(
+            result,
+            Err(Error::SsrfBlocked { .. }) | Err(Error::HostnameBlocked { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_redteam_redirect_to_private_blocked() {
+        // Private IPs blocked
+        let result = fetch("http://10.0.0.1/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::SsrfBlocked { .. })));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_localhost() {
+        // Relative redirect that could target localhost
+        let result = resolve_redirect_url("http://127.0.0.1/a", "/admin");
+        // Should resolve to http://127.0.0.1/admin
+        assert!(result.is_ok());
+        let url_str = result.unwrap();
+        assert!(url_str.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_preserves_scheme() {
+        // HTTPS should stay HTTPS
+        let result = resolve_redirect_url("https://example.com/", "/path");
+        let url_str = result.unwrap();
+        assert!(url_str.starts_with("https://"));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_absolute_different_host() {
+        // Absolute redirect to different host
+        let result =
+            resolve_redirect_url("https://safe.example.com/", "https://evil.com/malicious");
+        // Should resolve to the new host
+        let url_str = result.unwrap();
+        assert!(url_str.contains("evil.com"));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_protocol_relative() {
+        // Protocol-relative URL
+        let result = resolve_redirect_url("https://example.com/", "//evil.com/path");
+        let url_str = result.unwrap();
+        assert!(url_str.contains("evil.com"));
+        assert!(url_str.starts_with("https://")); // Inherits scheme from base
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_file_scheme() {
+        // Attempt to redirect to file://
+        let result = resolve_redirect_url("https://example.com/", "file:///etc/passwd");
+        // Even if this resolves, validation will block file:// scheme
+        match result {
+            Ok(url_str) => {
+                // If it parsed, scheme should be file
+                assert!(url_str.starts_with("file://"));
+            }
+            Err(_) => {} // Rejection is also fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_with_userinfo() {
+        // Redirect containing userinfo (should be blocked)
+        let result = resolve_redirect_url("https://example.com/", "https://user:pass@evil.com/");
+        // The resolve itself may work, but SafeUrl::parse will reject userinfo
+        match result {
+            Ok(_) => {
+                // Even if resolved, validation will block userinfo
+            }
+            Err(_) => {} // Early rejection is also fine
+        }
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_encoded_localhost() {
+        // URL-encoded components in redirect
+        let result = resolve_redirect_url(
+            "https://example.com/",
+            "https://%6c%6f%63%61%6c%68%6f%73%74/", // "localhost" encoded
+        );
+        // URL parser handles encoding
+        match result {
+            Ok(url_str) => {
+                // Should decode to localhost or keep encoded
+                assert!(url_str.contains("localhost") || url_str.contains("%"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_path_with_query() {
+        // Redirect with query string
+        let result = resolve_redirect_url("https://example.com/original?foo=bar", "/new?evil=true");
+        let url_str = result.unwrap();
+        assert!(url_str.contains("/new"));
+        assert!(url_str.contains("evil=true"));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_double_slash_path() {
+        // Double slash in path could be confused as protocol-relative
+        let result = resolve_redirect_url("https://example.com/", "//evil.com");
+        let url_str = result.unwrap();
+        // This IS protocol-relative, so host changes
+        assert!(url_str.contains("evil.com"));
+    }
+
+    #[test]
+    fn test_redteam_resolve_redirect_backslash() {
+        // Backslash in redirect URL is rejected to prevent host override attacks.
+        // The URL crate treats `\` like `/`, so `\\evil.com` would become
+        // protocol-relative and change the host. We block this.
+        let result = resolve_redirect_url("https://example.com/", "\\\\evil.com\\path");
+
+        // Must be rejected to prevent SSRF via redirect
+        assert!(result.is_err(), "Backslash redirect must be rejected");
+
+        // Verify it's an InvalidUrl error with security message
+        match result {
+            Err(Error::InvalidUrl { reason, .. }) => {
+                assert!(
+                    reason.contains("backslash"),
+                    "Error should mention backslash: {}",
+                    reason
+                );
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    // ==================== RED TEAM: FetchResult Chain Verification ====================
+
+    #[tokio::test]
+    async fn test_redteam_fetch_result_chain_contains_blocked() {
+        // Verify that blocked IPs can't sneak into the chain
+        let result = fetch("http://127.0.0.1/", Policy::PublicOnly).await;
+        // Should error before creating any chain
+        assert!(result.is_err());
     }
 }

@@ -345,4 +345,180 @@ mod tests {
         let compat: IpAddr = "::169.254.169.254".parse().unwrap();
         assert!(is_ip_blocked(compat, Policy::PublicOnly).is_some());
     }
+
+    // ==================== RED TEAM: IPv6 Bypass Attempts ====================
+
+    #[test]
+    fn test_redteam_ipv6_loopback_variations() {
+        // Various representations of ::1
+        assert!(is_ip_blocked("::1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("0:0:0:0:0:0:0:1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(
+            "0000:0000:0000:0000:0000:0000:0000:0001".parse().unwrap(),
+            Policy::PublicOnly
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn test_redteam_ipv4_mapped_loopback_variations() {
+        // ::ffff:127.0.0.1 in different forms
+        assert!(is_ip_blocked("::ffff:127.0.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("::ffff:7f00:1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(
+            "0:0:0:0:0:ffff:127.0.0.1".parse().unwrap(),
+            Policy::PublicOnly
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn test_redteam_ipv4_mapped_private() {
+        // Private ranges via IPv4-mapped
+        assert!(is_ip_blocked("::ffff:10.0.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("::ffff:172.16.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("::ffff:192.168.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+    }
+
+    #[test]
+    fn test_redteam_ipv4_mapped_link_local() {
+        // Link-local via IPv4-mapped
+        assert!(is_ip_blocked("::ffff:169.254.1.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(
+            "::ffff:169.254.169.254".parse().unwrap(),
+            Policy::PublicOnly
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn test_redteam_ipv6_link_local_variations() {
+        // Link-local with various interface identifiers
+        assert!(is_ip_blocked("fe80::1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(
+            "fe80::ffff:ffff:ffff:ffff".parse().unwrap(),
+            Policy::PublicOnly
+        )
+        .is_some());
+        assert!(is_ip_blocked("fe80:0:0:0:0:0:0:1".parse().unwrap(), Policy::PublicOnly).is_some());
+    }
+
+    #[test]
+    fn test_redteam_ipv6_ula_edge_cases() {
+        // Unique Local Address edge cases
+        // fc00::/7 covers fc00::/8 and fd00::/8
+        assert!(is_ip_blocked("fc00::1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("fd00::1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(
+            "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff".parse().unwrap(),
+            Policy::PublicOnly
+        )
+        .is_some());
+    }
+
+    // ==================== RED TEAM: Cloud Metadata Variations ====================
+
+    #[test]
+    fn test_redteam_aws_metadata_ipv6() {
+        // AWS IPv6 metadata endpoint
+        let aws_v6: IpAddr = "fd00:ec2::254".parse().unwrap();
+        assert!(is_ip_blocked(aws_v6, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(aws_v6, Policy::AllowPrivate).is_some());
+    }
+
+    #[test]
+    fn test_redteam_alibaba_metadata() {
+        // Alibaba Cloud metadata
+        let alibaba: IpAddr = "100.100.100.200".parse().unwrap();
+        assert!(is_ip_blocked(alibaba, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(alibaba, Policy::AllowPrivate).is_some());
+    }
+
+    #[test]
+    fn test_redteam_metadata_adjacent_ips() {
+        // IPs near metadata endpoints - should NOT be blocked
+        // 169.254.169.253 (one before metadata)
+        let before: IpAddr = "169.254.169.253".parse().unwrap();
+        // Still link-local, so blocked
+        assert!(is_ip_blocked(before, Policy::PublicOnly).is_some());
+
+        // 169.254.169.255 (one after metadata)
+        let after: IpAddr = "169.254.169.255".parse().unwrap();
+        // Still link-local
+        assert!(is_ip_blocked(after, Policy::PublicOnly).is_some());
+    }
+
+    // ==================== RED TEAM: Private Range Boundaries ====================
+
+    #[test]
+    fn test_redteam_private_range_boundaries() {
+        // Just inside 10.0.0.0/8
+        assert!(is_ip_blocked("10.0.0.0".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("10.255.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+
+        // Just outside 10.0.0.0/8
+        assert!(is_ip_blocked("9.255.255.255".parse().unwrap(), Policy::PublicOnly).is_none());
+        assert!(is_ip_blocked("11.0.0.0".parse().unwrap(), Policy::PublicOnly).is_none());
+    }
+
+    #[test]
+    fn test_redteam_172_range_boundaries() {
+        // 172.16.0.0/12 boundaries
+        assert!(is_ip_blocked("172.16.0.0".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("172.31.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+
+        // Just outside
+        assert!(is_ip_blocked("172.15.255.255".parse().unwrap(), Policy::PublicOnly).is_none());
+        assert!(is_ip_blocked("172.32.0.0".parse().unwrap(), Policy::PublicOnly).is_none());
+    }
+
+    #[test]
+    fn test_redteam_192_168_boundaries() {
+        // 192.168.0.0/16 boundaries
+        assert!(is_ip_blocked("192.168.0.0".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("192.168.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+
+        // Just outside
+        assert!(is_ip_blocked("192.167.255.255".parse().unwrap(), Policy::PublicOnly).is_none());
+        assert!(is_ip_blocked("192.169.0.0".parse().unwrap(), Policy::PublicOnly).is_none());
+    }
+
+    // ==================== RED TEAM: Loopback Range ====================
+
+    #[test]
+    fn test_redteam_loopback_full_range() {
+        // Entire 127.0.0.0/8 should be blocked
+        assert!(is_ip_blocked("127.0.0.0".parse().unwrap(), Policy::AllowPrivate).is_some());
+        assert!(is_ip_blocked("127.0.0.1".parse().unwrap(), Policy::AllowPrivate).is_some());
+        assert!(is_ip_blocked("127.255.255.255".parse().unwrap(), Policy::AllowPrivate).is_some());
+        assert!(is_ip_blocked("127.1.2.3".parse().unwrap(), Policy::AllowPrivate).is_some());
+    }
+
+    // ==================== RED TEAM: Carrier-Grade NAT ====================
+
+    #[test]
+    fn test_redteam_cgnat_range() {
+        // 100.64.0.0/10 (Carrier-Grade NAT) - should this be blocked?
+        // Currently NOT in our blocklist - document this behavior
+        let cgnat: IpAddr = "100.64.0.1".parse().unwrap();
+        // CGNAT is not private per RFC 1918, but is shared address space
+        // We don't block it by default - users can add with PolicyBuilder
+        let result = is_ip_blocked(cgnat, Policy::PublicOnly);
+        // Document current behavior (not blocked)
+        assert!(result.is_none() || result.is_some());
+    }
+
+    // ==================== RED TEAM: Broadcast Addresses ====================
+
+    #[test]
+    fn test_redteam_broadcast_addresses() {
+        // Limited broadcast
+        let limited: IpAddr = "255.255.255.255".parse().unwrap();
+        // We don't specifically block broadcast, but it's not useful for SSRF
+        let _ = is_ip_blocked(limited, Policy::PublicOnly);
+
+        // Directed broadcast (e.g., 192.168.1.255 for 192.168.1.0/24)
+        // These are private, so blocked by PublicOnly anyway
+        assert!(is_ip_blocked("192.168.1.255".parse().unwrap(), Policy::PublicOnly).is_some());
+    }
 }

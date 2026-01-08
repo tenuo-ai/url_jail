@@ -621,4 +621,244 @@ mod tests {
         let result = validate("https://example.com/", Policy::PublicOnly).await;
         assert!(result.is_ok());
     }
+
+    // ==================== RED TEAM: End-to-End Attack Scenarios ====================
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_metadata_direct() {
+        // Direct metadata access attempt
+        let result = validate(
+            "http://169.254.169.254/latest/meta-data/",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_metadata_with_path() {
+        let result = validate(
+            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_localhost_admin() {
+        // Common internal service attack
+        let result = validate("http://127.0.0.1/admin", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_localhost_high_port() {
+        // Internal service on non-standard port
+        let result = validate("http://127.0.0.1:8080/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_private_redis() {
+        // Redis default port
+        let result = validate("http://10.0.0.1:6379/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_private_elasticsearch() {
+        // Elasticsearch default port
+        let result = validate("http://192.168.1.1:9200/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ssrf_internal_kubernetes() {
+        // Kubernetes API server
+        let result = validate("http://10.96.0.1:443/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== RED TEAM: Hostname Blocklist Bypass Attempts ====================
+
+    #[tokio::test]
+    async fn test_redteam_metadata_hostname_case() {
+        // Case variation
+        let result = validate("http://METADATA.GOOGLE.INTERNAL/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+
+        let result2 = validate("http://Metadata.Google.Internal/", Policy::PublicOnly).await;
+        assert!(result2.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_metadata_subdomain() {
+        // Subdomain of blocked hostname
+        let result = validate(
+            "http://anything.metadata.google.internal/",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_metadata_similar_hostname() {
+        // Hostname that looks similar but isn't blocked
+        // "metadatax.google.internal" - not a subdomain
+        let result = validate("http://metadatax.google.internal/", Policy::PublicOnly).await;
+        // This should NOT be blocked by hostname check (different hostname)
+        // Will fail DNS resolution since domain doesn't exist
+        assert!(matches!(result, Err(Error::DnsError { .. })));
+    }
+
+    // ==================== RED TEAM: IP Encoding in URLs ====================
+
+    #[tokio::test]
+    async fn test_redteam_octal_ip_in_url() {
+        let result = validate("http://0177.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_hex_ip_in_url() {
+        let result = validate("http://0x7f000001/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_decimal_ip_in_url() {
+        let result = validate("http://2130706433/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_short_form_ip_in_url() {
+        let result = validate("http://127.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== RED TEAM: IPv6 in URLs ====================
+
+    #[tokio::test]
+    async fn test_redteam_ipv6_loopback_url() {
+        let result = validate("http://[::1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ipv6_mapped_loopback_url() {
+        let result = validate("http://[::ffff:127.0.0.1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ipv6_link_local_url() {
+        let result = validate("http://[fe80::1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== RED TEAM: Userinfo Bypass Attempts ====================
+
+    #[tokio::test]
+    async fn test_redteam_userinfo_bypass_localhost() {
+        let result = validate("http://user:pass@127.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_userinfo_bypass_safe_looking() {
+        // Looks like going to google.com but actually goes to 127.0.0.1
+        let result = validate("http://google.com@127.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== RED TEAM: AllowPrivate Still Blocks Dangerous ====================
+
+    #[tokio::test]
+    async fn test_redteam_allow_private_blocks_loopback() {
+        let result = validate("http://127.0.0.1/", Policy::AllowPrivate).await;
+        assert!(result.is_err(), "AllowPrivate must still block loopback");
+    }
+
+    #[tokio::test]
+    async fn test_redteam_allow_private_blocks_metadata() {
+        let result = validate("http://169.254.169.254/", Policy::AllowPrivate).await;
+        assert!(result.is_err(), "AllowPrivate must still block metadata");
+    }
+
+    #[tokio::test]
+    async fn test_redteam_allow_private_blocks_link_local() {
+        let result = validate("http://169.254.1.1/", Policy::AllowPrivate).await;
+        assert!(result.is_err(), "AllowPrivate must still block link-local");
+    }
+
+    #[tokio::test]
+    async fn test_redteam_allow_private_allows_private() {
+        // Private IPs should work with AllowPrivate
+        // These will fail DNS, but the IP wouldn't be blocked
+        let result = validate("http://10.0.0.1/", Policy::AllowPrivate).await;
+        // Should be SSRF blocked with PublicOnly, but not with AllowPrivate
+        // Will actually fail with DNS error since 10.0.0.1 isn't resolvable
+        match &result {
+            Err(Error::SsrfBlocked { .. }) => {
+                panic!("Private IP should not be SSRF blocked with AllowPrivate")
+            }
+            _ => {} // DNS error or success (if IP is parsed directly)
+        }
+    }
+
+    // ==================== RED TEAM: Custom Policy Attacks ====================
+
+    #[tokio::test]
+    async fn test_redteam_custom_policy_loopback_override() {
+        // Dangerous: allowing loopback via custom policy
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .allow_cidr("127.0.0.0/8")
+            .build();
+
+        let result = validate_custom("http://127.0.0.1/", &policy).await;
+        // This SHOULD succeed if user explicitly allows it
+        assert!(result.is_ok(), "Explicit allow should work");
+    }
+
+    #[tokio::test]
+    async fn test_redteam_custom_policy_still_blocks_unallowed() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .allow_cidr("10.1.0.0/16")
+            .build();
+
+        // 10.1.x.x should be allowed
+        // 10.2.x.x should still be blocked
+        let result = validate_custom("http://10.2.0.1/", &policy).await;
+        // Will be either SSRF blocked (10.2 not in allow list, blocked by PublicOnly)
+        // or DNS error
+        match &result {
+            Ok(_) => panic!("10.2.x.x should not be allowed"),
+            Err(Error::SsrfBlocked { .. }) => {} // Correct
+            Err(Error::DnsError { .. }) => {}    // Also acceptable (DNS failed first)
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    // ==================== RED TEAM: Scheme Attacks ====================
+
+    #[tokio::test]
+    async fn test_redteam_file_scheme() {
+        let result = validate("file:///etc/passwd", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_ftp_scheme() {
+        let result = validate("ftp://127.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_redteam_gopher_scheme() {
+        let result = validate("gopher://127.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
 }
