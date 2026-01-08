@@ -32,7 +32,10 @@ pub use error::Error;
 pub use policy::Policy;
 pub use policy_builder::{CustomPolicy, PolicyBuilder};
 pub use safe_url::SafeUrl;
-pub use validate::{validate, validate_sync, validate_with_options, ValidateOptions, Validated};
+pub use validate::{
+    validate, validate_custom, validate_custom_with_options, validate_sync, validate_with_options,
+    ValidateOptions, Validated,
+};
 
 #[cfg(feature = "fetch")]
 pub use fetch::{fetch, fetch_sync, FetchResult};

@@ -126,6 +126,70 @@ pub async fn validate_with_options(
     })
 }
 
+/// Validate a URL with a custom policy.
+///
+/// This allows using `CustomPolicy` created via `PolicyBuilder` for
+/// fine-grained control over what IPs and hostnames are allowed.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use url_jail::{validate_custom, PolicyBuilder, Policy};
+///
+/// # async fn example() -> Result<(), url_jail::Error> {
+/// let policy = PolicyBuilder::new(Policy::AllowPrivate)
+///     .block_cidr("10.0.0.0/8")
+///     .build();
+///
+/// let result = validate_custom("https://example.com/", &policy).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn validate_custom(
+    url: &str,
+    policy: &crate::policy_builder::CustomPolicy,
+) -> Result<Validated, Error> {
+    validate_custom_with_options(url, policy, ValidateOptions::default()).await
+}
+
+/// Validate a URL with a custom policy and options.
+pub async fn validate_custom_with_options(
+    url: &str,
+    policy: &crate::policy_builder::CustomPolicy,
+    options: ValidateOptions,
+) -> Result<Validated, Error> {
+    let safe_url = SafeUrl::parse(url)?;
+
+    // Check hostname against custom policy
+    if let Err(reason) = policy.is_hostname_allowed(safe_url.host()) {
+        return Err(Error::hostname_blocked(url, safe_url.host(), reason));
+    }
+
+    // Check built-in hostname blocklist
+    if let Some(blocked_host) = is_hostname_blocked(safe_url.host()) {
+        return Err(Error::hostname_blocked(
+            url,
+            safe_url.host(),
+            format!("hostname {} is blocked", blocked_host),
+        ));
+    }
+
+    let ip = resolve_dns_with_timeout(safe_url.host(), options.dns_timeout).await?;
+
+    // Check IP against custom policy
+    if let Err(reason) = policy.is_ip_allowed(ip) {
+        return Err(Error::ssrf_blocked(url, ip, reason));
+    }
+
+    Ok(Validated {
+        ip,
+        host: safe_url.host().to_string(),
+        port: safe_url.port(),
+        url: safe_url.as_str().to_string(),
+        https: safe_url.is_https(),
+    })
+}
+
 /// Synchronous version of [`validate`].
 ///
 /// This blocks the current thread while performing DNS resolution.
