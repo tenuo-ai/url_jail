@@ -2,6 +2,10 @@
 
 SSRF-safe URL validation for Rust and Python.
 
+Helps mitigate SSRF vulnerabilities like [CVE-2024-0243](https://nvd.nist.gov/vuln/detail/CVE-2024-0243) and [CVE-2025-2828](https://nvd.nist.gov/vuln/detail/CVE-2025-2828) (LangChain SSRF).
+
+> **Note**: This library has not undergone a formal security audit. See [SECURITY.md](SECURITY.md) for details.
+
 ## The Problem
 
 ```python
@@ -10,11 +14,11 @@ response = requests.get(user_url)  # AWS credentials leaked via 169.254.169.254
 
 ## The Solution
 
-**Python (recommended - full DNS rebinding protection):**
+**Python (recommended):**
 ```python
 from url_jail import get_sync
 
-body = get_sync(user_url)  # Safe! Validates URL and all redirects
+body = get_sync(user_url)  # Validates URL and all redirects
 ```
 
 **Rust:**

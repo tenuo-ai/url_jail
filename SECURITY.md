@@ -20,6 +20,46 @@ If you discover a security vulnerability in `url_jail`, please report it respons
 
 We will acknowledge receipt within 48 hours and provide a timeline for the fix.
 
+## Related CVEs
+
+`url_jail` helps mitigate the same class of vulnerabilities as these known CVEs:
+
+### CVE-2024-0243: LangChain RecursiveUrlLoader SSRF
+
+**Severity**: High (CVSS 8.6)
+
+The `RecursiveUrlLoader` component in LangChain allowed attackers to access unintended external domains and local resources, even with `prevent_outside=True`. Malicious HTML files could trigger the crawler to download files from internal networks or cloud metadata endpoints.
+
+**How url_jail helps mitigate this**: By validating URLs against IP blocklists *after* DNS resolution, `url_jail` blocks requests to:
+- Cloud metadata endpoints (`169.254.169.254`)
+- Private network ranges (`10.x`, `172.16.x`, `192.168.x`)
+- Loopback addresses (`127.0.0.1`, `localhost`)
+
+### CVE-2025-2828: LangChain RequestsToolkit SSRF
+
+**Severity**: High (CVSS 9.1)
+
+The `RequestsToolkit` component lacked restrictions on remote addresses, allowing attackers to:
+- Perform port scans on internal networks
+- Access local services (databases, admin panels)
+- Retrieve cloud instance metadata (AWS/GCP/Azure credentials)
+
+**How url_jail helps mitigate this**: The `PublicOnly` policy (default) blocks private and internal IP ranges. IP encoding tricks (octal, hex, decimal) that bypass naive string-based filters are detected and rejected.
+
+### Example Usage
+
+```python
+from url_jail import get_sync
+
+# Instead of: requests.get(user_url)
+# Use:
+body = get_sync(user_url)  # Validates URL and all redirects
+```
+
+For LangChain specifically, wrap URL fetching with `url_jail` validation before passing to loaders or toolkits.
+
+**Note**: `url_jail` is not a complete fix for these CVEs—those require updates to LangChain itself. However, `url_jail` provides defense-in-depth against the same attack patterns.
+
 ## Security Model
 
 `url_jail` protects against Server-Side Request Forgery (SSRF) attacks by:

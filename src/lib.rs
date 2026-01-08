@@ -6,6 +6,10 @@
 //! Like [`path_jail`](https://crates.io/crates/path_jail) prevents path traversal, `url_jail`
 //! prevents SSRF attacks with a minimal, secure-by-default API.
 //!
+//! This library helps prevent vulnerabilities like:
+//! - **CVE-2024-0243**: LangChain RecursiveUrlLoader SSRF (CVSS 8.6)
+//! - **CVE-2025-2828**: LangChain RequestsToolkit SSRF (CVSS 9.1)
+//!
 //! ## The Problem
 //!
 //! Standard HTTP clients trust DNS blindly, allowing attackers to:
@@ -103,7 +107,7 @@
 //!
 //! | Feature | Description |
 //! |---------|-------------|
-//! | `fetch` | [`fetch()`], [`fetch_sync()`] with redirect chain validation |
+//! | `fetch` | `fetch()`, `fetch_sync()` with redirect chain validation |
 //! | `tracing` | Debug/warn logs for validation decisions |
 //! | `python` | Python bindings via PyO3 |
 //!

@@ -3,6 +3,10 @@
 This module provides SSRF (Server-Side Request Forgery) protection by validating
 URLs and their resolved IP addresses before making HTTP requests.
 
+Helps prevent vulnerabilities like:
+- CVE-2024-0243: LangChain RecursiveUrlLoader SSRF
+- CVE-2025-2828: LangChain RequestsToolkit SSRF
+
 Example:
     >>> from url_jail import get_sync, Policy
     >>> body = get_sync("https://example.com/api")  # Safe!
