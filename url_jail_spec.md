@@ -225,7 +225,7 @@ result = validate_custom_sync("https://example.com/", policy)
 | `169.254.169.254` | Literal IP as hostname |
 | `instance-data` | AWS alternate (EC2-Classic) |
 
-### IP Blocklist — Always Blocked (Both Policies)
+### IP Blocklist - Always Blocked (Both Policies)
 
 | Range | Description |
 |-------|-------------|
@@ -237,7 +237,7 @@ result = validate_custom_sync("https://example.com/", policy)
 | `fd00:ec2::254` | AWS metadata (IPv6) |
 | `100.100.100.200` | Alibaba Cloud metadata |
 
-### IP Blocklist — Blocked by `PublicOnly` (Default)
+### IP Blocklist - Blocked by `PublicOnly` (Default)
 
 | Range | Description |
 |-------|-------------|

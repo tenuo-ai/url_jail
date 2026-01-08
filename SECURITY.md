@@ -4,6 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.2.x   | :white_check_mark: |
 | 0.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
@@ -20,7 +21,50 @@ If you discover a security vulnerability in `url_jail`, please report it respons
 
 We will acknowledge receipt within 48 hours and provide a timeline for the fix.
 
-## Related CVEs
+## Threat Model
+
+### What url_jail Assumes
+
+- **Attacker controls the URL string**: The primary threat is user-supplied URLs
+- **Network is trusted between validation and connection**: No MITM during the request
+- **DNS resolver is trusted**: Not poisoned or compromised
+- **System clock is accurate**: For timeout calculations
+
+### What url_jail Does NOT Assume
+
+- **Attacker has local filesystem access**: We block `file://` scheme, but can't prevent local attacks
+- **Attacker controls DNS responses**: DNS rebinding protection requires using the returned IP
+- **All metadata endpoints are known**: New cloud providers may have unknown endpoints
+- **HTTP client follows our guidance**: Protection requires using `Validated.ip` for connection
+
+### Trust Boundaries
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    UNTRUSTED                                │
+│  ┌─────────────┐                                            │
+│  │ User Input  │ ─── URL string                             │
+│  └─────────────┘                                            │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    url_jail                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
+│  │ URL Parse   │→ │ DNS Resolve │→ │ IP Validate │→ Validated│
+│  └─────────────┘  └─────────────┘  └─────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    TRUSTED                                  │
+│  ┌─────────────┐                                            │
+│  │ HTTP Client │ ─── Must use Validated.ip, not re-resolve  │
+│  └─────────────┘                                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Mitigates Similar Vulnerabilities
 
 `url_jail` helps mitigate the same class of vulnerabilities as these known CVEs:
 
@@ -58,7 +102,7 @@ body = get_sync(user_url)  # Validates URL and all redirects
 
 For LangChain specifically, wrap URL fetching with `url_jail` validation before passing to loaders or toolkits.
 
-**Note**: `url_jail` is not a complete fix for these CVEs—those require updates to LangChain itself. However, `url_jail` provides defense-in-depth against the same attack patterns.
+**Note**: `url_jail` is not a complete fix for these CVEs. Those require updates to LangChain itself. However, `url_jail` provides defense-in-depth against the same attack patterns.
 
 ## Security Model
 
@@ -81,7 +125,7 @@ For LangChain specifically, wrap URL fetching with `url_jail` validation before 
 - **Time-of-check/time-of-use (TOCTOU)**: If you don't use the returned IP immediately, DNS could change. Always connect right after validation.
 - **DNS rebinding (if misused)**: Protection only works if you use `Validated.ip` for the connection, not a second DNS lookup.
 - **Application-layer vulnerabilities**: We validate URLs, not request content or headers.
-- **DNS cache poisoning**: Out of scope—use DNSSEC at the resolver level.
+- **DNS cache poisoning**: Out of scope. Use DNSSEC at the resolver level.
 - **Non-HTTP protocols**: Only `http://` and `https://` schemes are validated.
 - **Malicious response content**: We don't inspect response bodies.
 - **New/unknown metadata endpoints**: We block known endpoints; new cloud providers may have unknown ones.

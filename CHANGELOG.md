@@ -7,32 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-01-08
-
-### Added
-
-- Python HTTP client adapters
-  - `safe_session()` - SSRF-safe requests.Session
-  - `safe_httpx_client()` / `safe_httpx_async_client()` - httpx adapters
-  - `safe_aiohttp_session()` - aiohttp adapter
-  - Optional dependencies: `url_jail[requests]`, `[httpx]`, `[aiohttp]`, `[all]`
-
-- Complete Python exception hierarchy (1:1 with Rust)
-  - `HostnameBlocked` - hostname pattern blocked
-  - `RedirectBlocked` - redirect to blocked URL
-  - `TooManyRedirects` - max redirects exceeded
-  - `HttpError` - HTTP-level errors
-  - `Timeout` - operation timeout
-
-- Security improvements
-  - Block unspecified addresses (`0.0.0.0`, `::`)
-  - Block IPv4-compatible IPv6 (`::127.0.0.1`)
-
-### Changed
-
-- Exception messages now use structured format: `url (target) - reason`
-
-## [0.1.0] - 2026-01-06
+## [0.1.0] - 2026-01-08
 
 ### Added
 
@@ -55,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IP blocklists
   - Loopback: `127.0.0.0/8`, `::1`
   - Link-local: `169.254.0.0/16`, `fe80::/10`
+  - Unspecified: `0.0.0.0`, `::`
   - Cloud metadata: `169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`
   - Private ranges (with `PublicOnly`): `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`
 
@@ -70,11 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reject hexadecimal notation (`0x7f000001`)
   - Reject short-form notation (`127.1`)
   - Handle IPv4-mapped IPv6 (`::ffff:127.0.0.1`)
+  - Block IPv4-compatible IPv6 (`::127.0.0.1`)
 
 - HTTP fetch with redirect validation (feature: `fetch`)
   - `fetch()` - async fetch with redirect chain validation
   - `fetch_sync()` - sync version
   - `FetchResult` with response and redirect chain
+  - Backslash in redirect URL rejected (prevents host override attacks)
 
 - Python bindings (feature: `python`)
   - `validate()` / `validate_sync()`
@@ -82,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get()` / `get_sync()`
   - `Policy`, `PolicyBuilder`, `CustomPolicy`
   - Type stubs (`url_jail.pyi`)
+  - Complete exception hierarchy: `UrlJailError`, `SsrfBlocked`, `HostnameBlocked`, `InvalidUrl`, `DnsError`, `Timeout`, `RedirectBlocked`, `TooManyRedirects`, `HttpError`
+
+- Python HTTP client adapters
+  - `safe_session()` - SSRF-safe requests.Session
+  - `safe_httpx_client()` / `safe_httpx_async_client()` - httpx adapters
+  - `safe_aiohttp_session()` - aiohttp adapter
+  - Optional dependencies: `url_jail[requests]`, `[httpx]`, `[aiohttp]`, `[all]`
 
 - Tracing support (feature: `tracing`)
   - Debug/warn logs for validation decisions
@@ -91,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DNS rebinding protection via verified IP return
 - All DNS-returned IPs validated (not just first)
 - Redirect chain validation with `fetch()`
+- Backslash in redirect URL rejected (prevents host override via URL crate behavior)
 
-[Unreleased]: https://github.com/tenuo-ai/url_jail/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/tenuo-ai/url_jail/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/tenuo-ai/url_jail/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tenuo-ai/url_jail/releases/tag/v0.1.0

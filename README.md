@@ -12,6 +12,25 @@ Helps mitigate SSRF vulnerabilities like [CVE-2024-0243](https://nvd.nist.gov/vu
 response = requests.get(user_url)  # AWS credentials leaked via 169.254.169.254
 ```
 
+## Why url_jail?
+
+String-based URL blocklists fail because attackers can encode IPs in unexpected ways:
+
+| Attack | Naive Blocklist | url_jail |
+|--------|-----------------|----------|
+| `http://0x7f000001/` (hex IP) | PASS | BLOCKED |
+| `http://0177.0.0.1/` (octal IP) | PASS | BLOCKED |
+| `http://2130706433/` (decimal IP) | PASS | BLOCKED |
+| `http://127.1/` (short-form) | PASS | BLOCKED |
+| `http://[::ffff:127.0.0.1]/` (IPv6-mapped) | PASS | BLOCKED |
+| `http://169.254.169.254/` | BLOCKED | BLOCKED |
+| `http://metadata.google.internal/` | Maybe | BLOCKED |
+| DNS rebinding (resolves to 127.0.0.1) | PASS | BLOCKED* |
+
+\* When using `get_sync()` or the returned `Validated.ip` directly.
+
+**url_jail validates after DNS resolution**, so encoding tricks and DNS rebinding don't work.
+
 ## The Solution
 
 **Python (recommended):**
@@ -54,10 +73,10 @@ pip install url_jail[requests]  # or [httpx], [aiohttp], [all]
 
 ```toml
 [dependencies]
-url_jail = "0.2"
+url_jail = "0.1"
 
 # Enable fetch() for redirect chain validation
-url_jail = { version = "0.2", features = ["fetch"] }
+url_jail = { version = "0.1", features = ["fetch"] }
 ```
 
 ## Policies
