@@ -121,8 +121,6 @@ jobs:
     name: Publish to PyPI
     needs: [build-wheels, build-wheels-macos-arm, build-wheels-musllinux]
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
     steps:
       - name: Download all wheels
         uses: actions/download-artifact@v4
