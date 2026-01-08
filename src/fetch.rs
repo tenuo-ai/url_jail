@@ -406,19 +406,12 @@ mod tests {
     // ==================== Too many redirects test ====================
 
     #[tokio::test]
+    #[ignore] // httpbin.org is unreliable in CI (502 errors, rate limiting)
     async fn test_fetch_too_many_redirects() {
         // httpbin /redirect/n follows n redirects
         // MAX_REDIRECTS is 10, so 11 should fail
-        // Note: In CI, httpbin may be rate-limited, so we accept HttpError as well
         let result = fetch("https://httpbin.org/redirect/11", Policy::PublicOnly).await;
-        assert!(
-            matches!(
-                result,
-                Err(Error::TooManyRedirects { .. }) | Err(Error::HttpError { .. })
-            ),
-            "Expected TooManyRedirects or HttpError, got: {:?}",
-            result
-        );
+        assert!(matches!(result, Err(Error::TooManyRedirects { .. })));
     }
 
     // ==================== Redirect security tests ====================
