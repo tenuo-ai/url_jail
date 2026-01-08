@@ -106,13 +106,8 @@ pub async fn validate_with_options(
         ));
     }
 
-    let ip = resolve_dns_with_timeout(safe_url.host(), options.dns_timeout).await?;
-
-    if let Some(reason) = is_ip_blocked(ip, policy) {
-        #[cfg(feature = "tracing")]
-        tracing::warn!(%ip, %reason, "IP blocked");
-        return Err(Error::ssrf_blocked(url, ip, reason));
-    }
+    // Resolve DNS and check ALL returned IPs against policy
+    let ip = resolve_and_verify_dns(safe_url.host(), options.dns_timeout, policy).await?;
 
     #[cfg(feature = "tracing")]
     tracing::debug!(%ip, host = safe_url.host(), "URL validated successfully");
@@ -207,7 +202,57 @@ pub fn validate_sync(url: &str, policy: Policy) -> Result<Validated, Error> {
     }
 }
 
-/// Resolve a hostname to an IP address with timeout.
+/// Resolve a hostname to IP addresses with timeout, checking ALL against policy.
+/// Returns the first allowed IP, or an error if any IP is blocked.
+async fn resolve_and_verify_dns(
+    host: &str,
+    timeout: Duration,
+    policy: Policy,
+) -> Result<IpAddr, Error> {
+    let host_str = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host_str.parse::<IpAddr>() {
+        // Literal IP - check directly
+        if let Some(reason) = is_ip_blocked(ip, policy) {
+            return Err(Error::ssrf_blocked(host, ip, reason));
+        }
+        return Ok(ip);
+    }
+
+    let resolve_future = async {
+        let resolver = TokioResolver::builder_tokio()
+            .map_err(|e| Error::dns_error(host, e.to_string()))?
+            .build();
+
+        let response = resolver
+            .lookup_ip(host)
+            .await
+            .map_err(|e| Error::dns_error(host, e.to_string()))?;
+
+        let ips: Vec<IpAddr> = response.iter().collect();
+        if ips.is_empty() {
+            return Err(Error::dns_error(host, "no IP addresses found"));
+        }
+
+        // Check ALL resolved IPs - if ANY is blocked, fail
+        // This prevents attackers from hiding a blocked IP among allowed ones
+        for ip in &ips {
+            if let Some(reason) = is_ip_blocked(*ip, policy) {
+                return Err(Error::ssrf_blocked(host, *ip, reason));
+            }
+        }
+
+        // All IPs are safe, return the first one
+        Ok(ips[0])
+    };
+
+    tokio::time::timeout(timeout, resolve_future)
+        .await
+        .map_err(|_| Error::Timeout {
+            message: format!("DNS resolution for {} timed out after {:?}", host, timeout),
+        })?
+}
+
+/// Resolve hostname for custom policies (doesn't do policy check internally).
 async fn resolve_dns_with_timeout(host: &str, timeout: Duration) -> Result<IpAddr, Error> {
     let host_str = host.trim_start_matches('[').trim_end_matches(']');
     if let Ok(ip) = host_str.parse::<IpAddr>() {
