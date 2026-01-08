@@ -151,6 +151,8 @@ fn matches_hostname_pattern(host: &str, pattern: &str) -> bool {
 mod tests {
     use super::*;
 
+    // ==================== CIDR blocking tests ====================
+
     #[test]
     fn test_block_cidr() {
         let policy = PolicyBuilder::new(Policy::AllowPrivate)
@@ -160,6 +162,58 @@ mod tests {
         assert!(policy.is_ip_allowed("10.1.2.3".parse().unwrap()).is_err());
         assert!(policy.is_ip_allowed("192.168.1.1".parse().unwrap()).is_ok());
     }
+
+    #[test]
+    fn test_block_multiple_cidrs() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("10.0.0.0/8")
+            .block_cidr("172.16.0.0/12")
+            .build();
+
+        assert!(policy.is_ip_allowed("10.1.2.3".parse().unwrap()).is_err());
+        assert!(policy.is_ip_allowed("172.20.1.1".parse().unwrap()).is_err());
+        assert!(policy.is_ip_allowed("192.168.1.1".parse().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn test_block_single_ip_cidr() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("192.168.1.100/32")
+            .build();
+
+        assert!(policy
+            .is_ip_allowed("192.168.1.100".parse().unwrap())
+            .is_err());
+        assert!(policy
+            .is_ip_allowed("192.168.1.101".parse().unwrap())
+            .is_ok());
+    }
+
+    #[test]
+    fn test_block_ipv6_cidr() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("2001:db8::/32")
+            .build();
+
+        assert!(policy
+            .is_ip_allowed("2001:db8::1".parse().unwrap())
+            .is_err());
+        assert!(policy.is_ip_allowed("2001:db9::1".parse().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn test_block_invalid_cidr_ignored() {
+        // Invalid CIDR should be silently ignored (builder pattern)
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("not-a-cidr")
+            .block_cidr("10.0.0.0/8")
+            .build();
+
+        // 10.x should still be blocked
+        assert!(policy.is_ip_allowed("10.1.2.3".parse().unwrap()).is_err());
+    }
+
+    // ==================== CIDR allowing tests ====================
 
     #[test]
     fn test_allow_cidr_overrides() {
@@ -178,6 +232,32 @@ mod tests {
     }
 
     #[test]
+    fn test_allow_loopback_override() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .allow_cidr("127.0.0.0/8")
+            .build();
+
+        // Loopback is normally always blocked, but we explicitly allowed it
+        assert!(policy.is_ip_allowed("127.0.0.1".parse().unwrap()).is_ok());
+        assert!(policy.is_ip_allowed("127.1.2.3".parse().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn test_allow_takes_precedence_over_block() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_cidr("10.0.0.0/8")
+            .allow_cidr("10.1.0.0/16")
+            .build();
+
+        // 10.1.x.x is allowed despite 10.0.0.0/8 being blocked
+        assert!(policy.is_ip_allowed("10.1.2.3".parse().unwrap()).is_ok());
+        // Other 10.x.x.x still blocked
+        assert!(policy.is_ip_allowed("10.2.0.1".parse().unwrap()).is_err());
+    }
+
+    // ==================== Hostname blocking tests ====================
+
+    #[test]
     fn test_block_host_pattern() {
         let policy = PolicyBuilder::new(Policy::PublicOnly)
             .block_host("*.internal.example.com")
@@ -190,11 +270,214 @@ mod tests {
     }
 
     #[test]
+    fn test_block_host_exact() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("blocked.example.com")
+            .build();
+
+        assert!(policy.is_hostname_allowed("blocked.example.com").is_err());
+        assert!(policy.is_hostname_allowed("other.example.com").is_ok());
+        // Subdomain should NOT match exact hostname block
+        assert!(policy
+            .is_hostname_allowed("sub.blocked.example.com")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_block_host_wildcard_matches_exact() {
+        // *.example.com should also match example.com itself
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.example.com")
+            .build();
+
+        assert!(policy.is_hostname_allowed("sub.example.com").is_err());
+        assert!(policy.is_hostname_allowed("example.com").is_err());
+    }
+
+    #[test]
+    fn test_block_host_case_insensitive() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("blocked.example.com")
+            .build();
+
+        assert!(policy.is_hostname_allowed("BLOCKED.EXAMPLE.COM").is_err());
+        assert!(policy.is_hostname_allowed("Blocked.Example.Com").is_err());
+    }
+
+    #[test]
+    fn test_block_multiple_hosts() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.internal.com")
+            .block_host("*.private.org")
+            .build();
+
+        assert!(policy.is_hostname_allowed("api.internal.com").is_err());
+        assert!(policy.is_hostname_allowed("db.private.org").is_err());
+        assert!(policy.is_hostname_allowed("public.example.com").is_ok());
+    }
+
+    // ==================== Hostname allowing tests ====================
+
+    #[test]
     fn test_allow_host_pattern() {
         let policy = PolicyBuilder::new(Policy::PublicOnly)
             .allow_host("trusted.internal")
             .build();
 
         assert!(policy.is_hostname_allowed("trusted.internal").is_ok());
+    }
+
+    #[test]
+    fn test_allow_host_takes_precedence_over_block() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.example.com")
+            .allow_host("trusted.example.com")
+            .build();
+
+        // trusted.example.com is allowed despite *.example.com being blocked
+        assert!(policy.is_hostname_allowed("trusted.example.com").is_ok());
+        // Other subdomains still blocked
+        assert!(policy.is_hostname_allowed("blocked.example.com").is_err());
+    }
+
+    #[test]
+    fn test_allow_host_wildcard() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.example.com")
+            .allow_host("*.trusted.example.com")
+            .build();
+
+        assert!(policy
+            .is_hostname_allowed("api.trusted.example.com")
+            .is_ok());
+        assert!(policy.is_hostname_allowed("other.example.com").is_err());
+    }
+
+    // ==================== Base policy interaction tests ====================
+
+    #[test]
+    fn test_public_only_base_blocks_private() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly).build();
+
+        assert!(policy
+            .is_ip_allowed("192.168.1.1".parse().unwrap())
+            .is_err());
+        assert!(policy.is_ip_allowed("10.0.0.1".parse().unwrap()).is_err());
+        assert!(policy
+            .is_ip_allowed("93.184.216.34".parse().unwrap())
+            .is_ok());
+    }
+
+    #[test]
+    fn test_allow_private_base_allows_private() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate).build();
+
+        assert!(policy.is_ip_allowed("192.168.1.1".parse().unwrap()).is_ok());
+        assert!(policy.is_ip_allowed("10.0.0.1".parse().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn test_allow_private_base_still_blocks_loopback() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate).build();
+
+        assert!(policy.is_ip_allowed("127.0.0.1".parse().unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_allow_private_base_still_blocks_metadata() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate).build();
+
+        assert!(policy
+            .is_ip_allowed("169.254.169.254".parse().unwrap())
+            .is_err());
+    }
+
+    // ==================== matches_hostname_pattern tests ====================
+
+    #[test]
+    fn test_matches_hostname_pattern_exact() {
+        assert!(matches_hostname_pattern("example.com", "example.com"));
+        assert!(!matches_hostname_pattern("example.com", "other.com"));
+    }
+
+    #[test]
+    fn test_matches_hostname_pattern_wildcard() {
+        assert!(matches_hostname_pattern("sub.example.com", "*.example.com"));
+        assert!(matches_hostname_pattern(
+            "deep.sub.example.com",
+            "*.example.com"
+        ));
+        assert!(!matches_hostname_pattern("other.com", "*.example.com"));
+    }
+
+    #[test]
+    fn test_matches_hostname_pattern_wildcard_matches_base() {
+        // *.example.com should also match example.com
+        assert!(matches_hostname_pattern("example.com", "*.example.com"));
+    }
+
+    #[test]
+    fn test_matches_hostname_pattern_case() {
+        // Function expects lowercase input
+        assert!(matches_hostname_pattern("example.com", "example.com"));
+        // Case mismatch - function doesn't handle, caller should lowercase
+        assert!(!matches_hostname_pattern("EXAMPLE.COM", "example.com"));
+    }
+
+    // ==================== Builder chaining tests ====================
+
+    #[test]
+    fn test_builder_chaining() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_cidr("10.0.0.0/8")
+            .allow_cidr("10.1.0.0/16")
+            .block_host("*.internal.com")
+            .allow_host("trusted.internal.com")
+            .build();
+
+        // IP checks
+        assert!(policy.is_ip_allowed("10.1.2.3".parse().unwrap()).is_ok());
+        assert!(policy.is_ip_allowed("10.2.0.1".parse().unwrap()).is_err());
+
+        // Hostname checks
+        assert!(policy.is_hostname_allowed("trusted.internal.com").is_ok());
+        assert!(policy.is_hostname_allowed("other.internal.com").is_err());
+    }
+
+    #[test]
+    fn test_policy_clone() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_cidr("10.0.0.0/8")
+            .build();
+
+        let cloned = policy.clone();
+
+        assert!(cloned.is_ip_allowed("10.1.2.3".parse().unwrap()).is_err());
+    }
+
+    // ==================== Error message tests ====================
+
+    #[test]
+    fn test_error_message_contains_ip() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("10.0.0.0/8")
+            .build();
+
+        let err = policy
+            .is_ip_allowed("10.1.2.3".parse().unwrap())
+            .unwrap_err();
+        assert!(err.contains("10.1.2.3"));
+        assert!(err.contains("10.0.0.0/8"));
+    }
+
+    #[test]
+    fn test_error_message_contains_hostname() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.internal.com")
+            .build();
+
+        let err = policy.is_hostname_allowed("api.internal.com").unwrap_err();
+        assert!(err.contains("api.internal.com"));
+        assert!(err.contains("*.internal.com"));
     }
 }

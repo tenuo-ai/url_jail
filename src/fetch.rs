@@ -142,6 +142,8 @@ fn resolve_redirect_url(base: &str, location: &str) -> Result<String, Error> {
 mod tests {
     use super::*;
 
+    // ==================== Basic fetch tests ====================
+
     #[tokio::test]
     async fn test_fetch_simple() {
         let result = fetch("https://httpbin.org/get", Policy::PublicOnly).await;
@@ -161,6 +163,189 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_blocked_ip() {
         let result = fetch("http://127.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== fetch_sync tests ====================
+
+    #[test]
+    fn test_fetch_sync_simple() {
+        let result = fetch_sync("https://httpbin.org/get", Policy::PublicOnly);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.chain.len(), 1);
+    }
+
+    #[test]
+    fn test_fetch_sync_blocked_ip() {
+        let result = fetch_sync("http://127.0.0.1/", Policy::PublicOnly);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fetch_sync_blocked_metadata() {
+        let result = fetch_sync("http://169.254.169.254/", Policy::PublicOnly);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fetch_sync_blocked_private() {
+        let result = fetch_sync("http://192.168.1.1/", Policy::PublicOnly);
+        assert!(result.is_err());
+    }
+
+    // ==================== Multiple redirect tests ====================
+
+    #[tokio::test]
+    async fn test_fetch_multiple_redirects() {
+        let result = fetch("https://httpbin.org/redirect/3", Policy::PublicOnly).await;
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.chain.len(), 4); // original + 3 redirects
+    }
+
+    #[tokio::test]
+    async fn test_fetch_absolute_redirect() {
+        let result = fetch(
+            "https://httpbin.org/absolute-redirect/1",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_relative_redirect() {
+        let result = fetch(
+            "https://httpbin.org/relative-redirect/1",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    // ==================== Error type tests ====================
+
+    #[tokio::test]
+    async fn test_fetch_error_is_ssrf_for_blocked_initial() {
+        let result = fetch("http://127.0.0.1/", Policy::PublicOnly).await;
+        // For initial URL, should be SsrfBlocked (not RedirectBlocked)
+        assert!(matches!(result, Err(Error::SsrfBlocked { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_error_is_invalid_url() {
+        let result = fetch("ftp://example.com/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::InvalidUrl { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_error_hostname_blocked() {
+        let result = fetch("http://metadata.google.internal/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::HostnameBlocked { .. })));
+    }
+
+    // ==================== FetchResult tests ====================
+
+    #[tokio::test]
+    async fn test_fetch_result_chain_has_validated_info() {
+        let result = fetch("https://httpbin.org/get", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        assert!(!result.chain.is_empty());
+        let first = &result.chain[0];
+        assert_eq!(first.host, "httpbin.org");
+        assert_eq!(first.port, 443);
+        assert!(first.https);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_result_response_status() {
+        let result = fetch("https://httpbin.org/status/200", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        assert_eq!(result.response.status().as_u16(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_result_response_status_404() {
+        let result = fetch("https://httpbin.org/status/404", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        assert_eq!(result.response.status().as_u16(), 404);
+    }
+
+    // ==================== Policy tests ====================
+
+    #[tokio::test]
+    async fn test_fetch_allow_private_still_blocks_loopback() {
+        let result = fetch("http://127.0.0.1/", Policy::AllowPrivate).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_allow_private_still_blocks_metadata() {
+        let result = fetch("http://169.254.169.254/", Policy::AllowPrivate).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== resolve_redirect_url tests ====================
+
+    #[test]
+    fn test_resolve_redirect_url_absolute() {
+        let result = resolve_redirect_url("https://example.com/path", "https://other.com/new-path");
+        assert_eq!(result.unwrap(), "https://other.com/new-path");
+    }
+
+    #[test]
+    fn test_resolve_redirect_url_relative() {
+        let result = resolve_redirect_url("https://example.com/path", "/new-path");
+        assert_eq!(result.unwrap(), "https://example.com/new-path");
+    }
+
+    #[test]
+    fn test_resolve_redirect_url_relative_no_slash() {
+        let result = resolve_redirect_url("https://example.com/dir/", "file");
+        assert_eq!(result.unwrap(), "https://example.com/dir/file");
+    }
+
+    #[test]
+    fn test_resolve_redirect_url_with_query() {
+        let result = resolve_redirect_url("https://example.com/path?old=query", "/new?new=query");
+        assert_eq!(result.unwrap(), "https://example.com/new?new=query");
+    }
+
+    #[test]
+    fn test_resolve_redirect_url_protocol_relative() {
+        let result = resolve_redirect_url("https://example.com/path", "//other.com/path");
+        assert_eq!(result.unwrap(), "https://other.com/path");
+    }
+
+    // ==================== Edge cases ====================
+
+    #[tokio::test]
+    async fn test_fetch_with_query_params() {
+        let result = fetch(
+            "https://httpbin.org/get?foo=bar&baz=qux",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_with_custom_port() {
+        // httpbin.org doesn't support custom ports, so we just test blocked IP with port
+        let result = fetch("http://127.0.0.1:8080/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ipv6_loopback_blocked() {
+        let result = fetch("http://[::1]/", Policy::PublicOnly).await;
         assert!(result.is_err());
     }
 }

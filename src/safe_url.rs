@@ -546,4 +546,264 @@ mod tests {
         assert!(SafeUrl::parse("http://0x7f000001/latest/meta-data/").is_err());
         assert!(SafeUrl::parse("http://127.1/admin/config").is_err());
     }
+
+    // ==================== Edge Cases and Error Handling ====================
+
+    #[test]
+    fn test_empty_url() {
+        assert!(SafeUrl::parse("").is_err());
+    }
+
+    #[test]
+    fn test_whitespace_only_url() {
+        assert!(SafeUrl::parse("   ").is_err());
+    }
+
+    #[test]
+    fn test_scheme_only() {
+        assert!(SafeUrl::parse("http://").is_err());
+        assert!(SafeUrl::parse("https://").is_err());
+    }
+
+    #[test]
+    fn test_no_scheme() {
+        assert!(SafeUrl::parse("example.com").is_err());
+        assert!(SafeUrl::parse("//example.com").is_err());
+    }
+
+    #[test]
+    fn test_url_with_fragment() {
+        let url = SafeUrl::parse("https://example.com/path#fragment").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_url_with_empty_query() {
+        let url = SafeUrl::parse("https://example.com/path?").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_url_with_empty_fragment() {
+        let url = SafeUrl::parse("https://example.com/path#").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_very_long_hostname() {
+        // DNS labels are max 63 chars, hostnames max 253 chars
+        let long_label = "a".repeat(63);
+        let long_hostname = format!("{}.{}.{}.com", long_label, long_label, long_label);
+        let url = format!("http://{}/", long_hostname);
+        let result = SafeUrl::parse(&url);
+        // Should parse successfully (URL parser handles DNS limits differently)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_punycode_hostname() {
+        // IDN/Punycode: xn--nxasmq5b = "בדיקה" in Hebrew
+        let url = SafeUrl::parse("http://xn--nxasmq5b.com/").unwrap();
+        assert!(url.host().contains("xn--"));
+    }
+
+    #[test]
+    fn test_hostname_with_underscore() {
+        // Underscores technically not allowed in DNS but often work
+        let result = SafeUrl::parse("http://my_host.example.com/");
+        // url crate may accept this
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_hostname_with_hyphen() {
+        let url = SafeUrl::parse("http://my-host.example.com/").unwrap();
+        assert_eq!(url.host(), "my-host.example.com");
+    }
+
+    #[test]
+    fn test_hostname_starting_with_hyphen() {
+        // Invalid DNS name but URL parser may accept
+        let result = SafeUrl::parse("http://-invalid.example.com/");
+        // Either accept or reject is fine, just don't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_double_slash_in_path() {
+        let url = SafeUrl::parse("http://example.com//path//to//resource").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_url_with_port_zero() {
+        // Port 0 is technically valid
+        let url = SafeUrl::parse("http://example.com:0/").unwrap();
+        assert_eq!(url.port(), 0);
+    }
+
+    #[test]
+    fn test_url_with_high_port() {
+        let url = SafeUrl::parse("http://example.com:65535/").unwrap();
+        assert_eq!(url.port(), 65535);
+    }
+
+    #[test]
+    fn test_url_with_invalid_port() {
+        // Port > 65535 should fail
+        assert!(SafeUrl::parse("http://example.com:65536/").is_err());
+        assert!(SafeUrl::parse("http://example.com:99999/").is_err());
+    }
+
+    #[test]
+    fn test_url_encoded_characters_in_path() {
+        let url = SafeUrl::parse("http://example.com/path%20with%20spaces").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_url_with_at_sign_in_path() {
+        // @ in path, not userinfo
+        let url = SafeUrl::parse("http://example.com/user@domain").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_localhost_variations() {
+        // localhost as hostname (not IP)
+        let url = SafeUrl::parse("http://localhost/").unwrap();
+        assert_eq!(url.host(), "localhost");
+
+        let url2 = SafeUrl::parse("http://LOCALHOST/").unwrap();
+        assert_eq!(url2.host(), "localhost");
+
+        let url3 = SafeUrl::parse("http://LocalHost/").unwrap();
+        assert_eq!(url3.host(), "localhost");
+    }
+
+    #[test]
+    fn test_ipv6_with_zone_id() {
+        // Zone IDs (fe80::1%eth0) - may or may not be supported
+        let result = SafeUrl::parse("http://[fe80::1%25eth0]/");
+        // Just ensure it doesn't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_ipv6_loopback() {
+        let url = SafeUrl::parse("http://[::1]/").unwrap();
+        assert_eq!(url.host(), "[::1]");
+    }
+
+    #[test]
+    fn test_ipv6_full_form() {
+        let url = SafeUrl::parse("http://[0000:0000:0000:0000:0000:0000:0000:0001]/").unwrap();
+        // URL parser normalizes IPv6
+        assert!(url.host().contains("::1") || url.host().contains("0000"));
+    }
+
+    #[test]
+    fn test_ipv4_mapped_ipv6_in_url() {
+        let url = SafeUrl::parse("http://[::ffff:127.0.0.1]/").unwrap();
+        assert!(url.host().contains("127.0.0.1") || url.host().contains("ffff"));
+    }
+
+    // ==================== Error Type Verification ====================
+
+    #[test]
+    fn test_invalid_scheme_error_message() {
+        let err = SafeUrl::parse("ftp://example.com/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("scheme") || reason.contains("ftp"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    #[test]
+    fn test_userinfo_error_message() {
+        let err = SafeUrl::parse("http://user:pass@example.com/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("userinfo"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    #[test]
+    fn test_octal_ip_error_message() {
+        let err = SafeUrl::parse("http://0177.0.0.1/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("octal"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    #[test]
+    fn test_hex_ip_error_message() {
+        let err = SafeUrl::parse("http://0x7f000001/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("hex"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    #[test]
+    fn test_decimal_ip_error_message() {
+        let err = SafeUrl::parse("http://2130706433/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("decimal"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    #[test]
+    fn test_short_form_ip_error_message() {
+        let err = SafeUrl::parse("http://127.1/").unwrap_err();
+        match err {
+            crate::Error::InvalidUrl { reason, .. } => {
+                assert!(reason.contains("short-form"));
+            }
+            _ => panic!("Expected InvalidUrl error"),
+        }
+    }
+
+    // ==================== Unicode and Special Characters ====================
+
+    #[test]
+    fn test_unicode_in_path() {
+        let url = SafeUrl::parse("http://example.com/путь").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
+
+    #[test]
+    fn test_unicode_hostname_gets_normalized() {
+        // Unicode hostnames should be converted to punycode by the URL parser
+        let result = SafeUrl::parse("http://münchen.de/");
+        // Should either work (with punycode) or fail cleanly
+        match result {
+            Ok(url) => {
+                // Should be normalized to punycode
+                let host = url.host();
+                assert!(host == "münchen.de" || host.contains("xn--"));
+            }
+            Err(_) => {
+                // Some parsers may reject non-ASCII hostnames
+            }
+        }
+    }
+
+    #[test]
+    fn test_emoji_in_path() {
+        let url = SafeUrl::parse("http://example.com/🎉").unwrap();
+        assert_eq!(url.host(), "example.com");
+    }
 }

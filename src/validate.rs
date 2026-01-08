@@ -285,6 +285,7 @@ async fn resolve_dns_with_timeout(host: &str, timeout: Duration) -> Result<IpAdd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy_builder::PolicyBuilder;
 
     #[tokio::test]
     async fn test_validate_public_ip() {
@@ -319,6 +320,221 @@ mod tests {
     #[tokio::test]
     async fn test_reject_octal() {
         let result = validate("http://0177.0.0.1/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== validate_sync tests ====================
+
+    #[test]
+    fn test_validate_sync_public_ip() {
+        let result = validate_sync("https://example.com/", Policy::PublicOnly);
+        assert!(result.is_ok());
+        let validated = result.unwrap();
+        assert_eq!(validated.host, "example.com");
+        assert_eq!(validated.port, 443);
+        assert!(validated.https);
+    }
+
+    #[test]
+    fn test_validate_sync_blocks_loopback() {
+        let result = validate_sync("http://127.0.0.1/", Policy::PublicOnly);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_blocks_private() {
+        let result = validate_sync("http://192.168.1.1/", Policy::PublicOnly);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_allows_private_with_policy() {
+        // With AllowPrivate, private IPs should be allowed
+        // 10.0.0.1 is a literal IP, so DNS just parses it directly
+        let result = validate_sync("http://10.0.0.1/", Policy::AllowPrivate);
+        assert!(
+            result.is_ok(),
+            "Private IPs should be allowed with AllowPrivate"
+        );
+        let validated = result.unwrap();
+        assert_eq!(validated.ip.to_string(), "10.0.0.1");
+    }
+
+    // ==================== validate_with_options tests ====================
+
+    #[tokio::test]
+    async fn test_validate_with_custom_timeout() {
+        let opts = ValidateOptions {
+            dns_timeout: Duration::from_secs(5),
+        };
+        let result = validate_with_options("https://example.com/", Policy::PublicOnly, opts).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_very_short_timeout() {
+        // This may or may not timeout depending on DNS cache, but should not panic
+        let opts = ValidateOptions {
+            dns_timeout: Duration::from_millis(1),
+        };
+        let result = validate_with_options(
+            "https://very-slow-dns-example.invalid/",
+            Policy::PublicOnly,
+            opts,
+        )
+        .await;
+        // Should either timeout or DNS error (domain doesn't exist)
+        assert!(result.is_err());
+    }
+
+    // ==================== validate_custom tests ====================
+
+    #[tokio::test]
+    async fn test_validate_custom_block_cidr() {
+        let policy = PolicyBuilder::new(Policy::AllowPrivate)
+            .block_cidr("10.0.0.0/8")
+            .build();
+
+        // 10.x.x.x should be blocked even with AllowPrivate base
+        let result = validate_custom("http://10.1.2.3/", &policy).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_custom_allow_cidr_override() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .allow_cidr("127.0.0.1/32")
+            .build();
+
+        // Loopback would normally be blocked, but we explicitly allowed it
+        let result = validate_custom("http://127.0.0.1/", &policy).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_custom_block_hostname() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly)
+            .block_host("*.example.com")
+            .build();
+
+        let result = validate_custom("https://api.example.com/", &policy).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_custom_with_options() {
+        let policy = PolicyBuilder::new(Policy::PublicOnly).build();
+        let opts = ValidateOptions {
+            dns_timeout: Duration::from_secs(10),
+        };
+
+        let result = validate_custom_with_options("https://example.com/", &policy, opts).await;
+        assert!(result.is_ok());
+    }
+
+    // ==================== Validated struct tests ====================
+
+    #[tokio::test]
+    async fn test_validated_fields() {
+        let result = validate("https://example.com:8443/path?query=1", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        assert_eq!(result.host, "example.com");
+        assert_eq!(result.port, 8443);
+        assert!(result.https);
+        assert!(result.url.contains("example.com"));
+        assert!(!result.ip.is_loopback());
+    }
+
+    #[tokio::test]
+    async fn test_validated_to_socket_addr() {
+        let result = validate("https://example.com/", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        let socket_addr = result.to_socket_addr();
+        assert_eq!(socket_addr.port(), 443);
+        assert_eq!(socket_addr.ip(), result.ip);
+    }
+
+    #[tokio::test]
+    async fn test_validated_http_port() {
+        let result = validate("http://example.com/", Policy::PublicOnly)
+            .await
+            .unwrap();
+
+        assert_eq!(result.port, 80);
+        assert!(!result.https);
+    }
+
+    // ==================== IPv6 validation tests ====================
+
+    #[tokio::test]
+    async fn test_block_ipv6_loopback() {
+        let result = validate("http://[::1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_ipv6_link_local() {
+        let result = validate("http://[fe80::1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_ipv4_mapped_ipv6() {
+        let result = validate("http://[::ffff:127.0.0.1]/", Policy::PublicOnly).await;
+        assert!(result.is_err());
+    }
+
+    // ==================== Error type tests ====================
+
+    #[tokio::test]
+    async fn test_error_is_ssrf_blocked_for_ip() {
+        let result = validate("http://127.0.0.1/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::SsrfBlocked { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_error_is_hostname_blocked() {
+        let result = validate("http://metadata.google.internal/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::HostnameBlocked { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_error_is_invalid_url() {
+        let result = validate("ftp://example.com/", Policy::PublicOnly).await;
+        assert!(matches!(result, Err(Error::InvalidUrl { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_error_is_dns_error() {
+        let result = validate(
+            "http://this-domain-does-not-exist-12345.invalid/",
+            Policy::PublicOnly,
+        )
+        .await;
+        assert!(matches!(result, Err(Error::DnsError { .. })));
+    }
+
+    // ==================== AllowPrivate policy tests ====================
+
+    #[tokio::test]
+    async fn test_allow_private_still_blocks_loopback() {
+        let result = validate("http://127.0.0.1/", Policy::AllowPrivate).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_allow_private_still_blocks_metadata() {
+        let result = validate("http://169.254.169.254/", Policy::AllowPrivate).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_allow_private_still_blocks_link_local() {
+        let result = validate("http://169.254.1.1/", Policy::AllowPrivate).await;
         assert!(result.is_err());
     }
 }

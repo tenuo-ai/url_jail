@@ -165,4 +165,120 @@ mod tests {
         let public_ip: IpAddr = "93.184.216.34".parse().unwrap();
         assert!(is_ip_blocked(public_ip, Policy::PublicOnly).is_none());
     }
+
+    #[test]
+    fn test_ipv6_link_local_blocked() {
+        // fe80::/10 - link-local addresses blocked by both policies
+        let link_local: IpAddr = "fe80::1".parse().unwrap();
+        assert!(is_ip_blocked(link_local, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(link_local, Policy::AllowPrivate).is_some());
+
+        // Another link-local address
+        let link_local2: IpAddr = "fe80::abcd:1234".parse().unwrap();
+        assert!(is_ip_blocked(link_local2, Policy::PublicOnly).is_some());
+    }
+
+    #[test]
+    fn test_ipv6_unique_local_blocked_by_public_only() {
+        // fc00::/7 (unique local) - blocked by PublicOnly, allowed by AllowPrivate
+        let ula_fc: IpAddr = "fc00::1".parse().unwrap();
+        assert!(is_ip_blocked(ula_fc, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(ula_fc, Policy::AllowPrivate).is_none());
+
+        let ula_fd: IpAddr = "fd00::1".parse().unwrap();
+        assert!(is_ip_blocked(ula_fd, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(ula_fd, Policy::AllowPrivate).is_none());
+
+        // Full ULA address
+        let ula_full: IpAddr = "fd12:3456:789a::1".parse().unwrap();
+        assert!(is_ip_blocked(ula_full, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(ula_full, Policy::AllowPrivate).is_none());
+    }
+
+    #[test]
+    fn test_aws_ipv6_metadata_blocked() {
+        // fd00:ec2::254 - AWS IPv6 metadata endpoint, always blocked
+        let aws_meta: IpAddr = "fd00:ec2::254".parse().unwrap();
+        assert!(is_ip_blocked(aws_meta, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(aws_meta, Policy::AllowPrivate).is_some());
+    }
+
+    #[test]
+    fn test_ipv4_mapped_ipv6_metadata() {
+        // ::ffff:169.254.169.254 - metadata via IPv4-mapped IPv6
+        let mapped_meta: IpAddr = "::ffff:169.254.169.254".parse().unwrap();
+        assert!(is_ip_blocked(mapped_meta, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(mapped_meta, Policy::AllowPrivate).is_some());
+    }
+
+    #[test]
+    fn test_ipv4_mapped_ipv6_private() {
+        // ::ffff:192.168.1.1 - private via IPv4-mapped IPv6
+        let mapped_private: IpAddr = "::ffff:192.168.1.1".parse().unwrap();
+        assert!(is_ip_blocked(mapped_private, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(mapped_private, Policy::AllowPrivate).is_none());
+    }
+
+    #[test]
+    fn test_public_ipv6_allowed() {
+        // Public IPv6 addresses should be allowed
+        let public_v6: IpAddr = "2001:db8::1".parse().unwrap();
+        assert!(is_ip_blocked(public_v6, Policy::PublicOnly).is_none());
+
+        let google_dns: IpAddr = "2001:4860:4860::8888".parse().unwrap();
+        assert!(is_ip_blocked(google_dns, Policy::PublicOnly).is_none());
+    }
+
+    #[test]
+    fn test_hostname_blocklist_subdomain() {
+        // Subdomains of blocked hostnames should also be blocked
+        assert!(is_hostname_blocked("sub.metadata.google.internal").is_some());
+        assert!(is_hostname_blocked("deep.sub.metadata.google.internal").is_some());
+    }
+
+    #[test]
+    fn test_hostname_blocklist_instance_data() {
+        // AWS EC2-Classic alternate hostname
+        assert!(is_hostname_blocked("instance-data").is_some());
+    }
+
+    #[test]
+    fn test_hostname_literal_ip_blocked() {
+        // Literal IP as hostname should be blocked
+        assert!(is_hostname_blocked("169.254.169.254").is_some());
+    }
+
+    #[test]
+    fn test_ipv4_link_local_range() {
+        // 169.254.0.0/16 is link-local (except metadata)
+        let link_local: IpAddr = "169.254.1.1".parse().unwrap();
+        assert!(is_ip_blocked(link_local, Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked(link_local, Policy::AllowPrivate).is_some());
+    }
+
+    #[test]
+    fn test_all_private_ranges() {
+        // 10.0.0.0/8
+        assert!(is_ip_blocked("10.0.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("10.255.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+
+        // 172.16.0.0/12
+        assert!(is_ip_blocked("172.16.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("172.31.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+        // 172.15.x and 172.32.x are NOT private
+        assert!(is_ip_blocked("172.15.0.1".parse().unwrap(), Policy::PublicOnly).is_none());
+        assert!(is_ip_blocked("172.32.0.1".parse().unwrap(), Policy::PublicOnly).is_none());
+
+        // 192.168.0.0/16
+        assert!(is_ip_blocked("192.168.0.1".parse().unwrap(), Policy::PublicOnly).is_some());
+        assert!(is_ip_blocked("192.168.255.255".parse().unwrap(), Policy::PublicOnly).is_some());
+    }
+
+    #[test]
+    fn test_loopback_full_range() {
+        // Entire 127.0.0.0/8 is loopback
+        assert!(is_ip_blocked("127.0.0.1".parse().unwrap(), Policy::AllowPrivate).is_some());
+        assert!(is_ip_blocked("127.1.2.3".parse().unwrap(), Policy::AllowPrivate).is_some());
+        assert!(is_ip_blocked("127.255.255.255".parse().unwrap(), Policy::AllowPrivate).is_some());
+    }
 }

@@ -198,6 +198,19 @@ except UrlJailError as e:
     print(f"Error: {e}")  # Timeout, TooManyRedirects, HttpError
 ```
 
+### Custom Policy (Python)
+
+```python
+from url_jail import PolicyBuilder, Policy, validate_custom_sync
+
+policy = PolicyBuilder(Policy.ALLOW_PRIVATE) \
+    .block_cidr("10.0.0.0/8") \
+    .block_host("*.internal.example.com") \
+    .build()
+
+result = validate_custom_sync("https://example.com/", policy)
+```
+
 ---
 
 ## 7. What's Blocked
@@ -319,7 +332,9 @@ Minimal. HTTP client optional.
 
 - **Python type stubs** (`url_jail.pyi`)
 - **Timeout configuration** (`ValidateOptions`, `Timeout` error)
-- **Custom blocklists** (`PolicyBuilder`, `CustomPolicy`)
+- **Custom blocklists** (`PolicyBuilder`, `CustomPolicy`, `validate_custom()`)
+- **Python PolicyBuilder** (`PolicyBuilder`, `validate_custom_sync()`)
+- **Multi-IP DNS security** - checks ALL resolved IPs, fails if any is blocked
 - **Tracing support** (optional feature)
 - Expanded IP encoding rejection (hex, short-form)
 - Bracket validation for hostnames
