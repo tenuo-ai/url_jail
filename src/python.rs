@@ -58,6 +58,66 @@ impl From<RustValidated> for PyValidated {
     }
 }
 
+/// Custom policy for fine-grained control.
+#[pyclass(name = "CustomPolicy")]
+#[derive(Clone)]
+pub struct PyCustomPolicy {
+    inner: crate::CustomPolicy,
+}
+
+/// Builder for creating custom policies.
+#[pyclass(name = "PolicyBuilder")]
+#[derive(Clone)]
+pub struct PyPolicyBuilder {
+    inner: crate::PolicyBuilder,
+}
+
+#[pymethods]
+impl PyPolicyBuilder {
+    /// Create a new PolicyBuilder with a base policy.
+    #[new]
+    fn new(base: PyPolicy) -> Self {
+        Self {
+            inner: crate::PolicyBuilder::new(base.into()),
+        }
+    }
+
+    /// Block an IP range (CIDR notation).
+    fn block_cidr(&self, cidr: &str) -> Self {
+        Self {
+            inner: self.inner.clone().block_cidr(cidr),
+        }
+    }
+
+    /// Allow an IP range (CIDR notation), overriding base policy.
+    fn allow_cidr(&self, cidr: &str) -> Self {
+        Self {
+            inner: self.inner.clone().allow_cidr(cidr),
+        }
+    }
+
+    /// Block a hostname pattern (supports wildcards like *.internal.example.com).
+    fn block_host(&self, pattern: &str) -> Self {
+        Self {
+            inner: self.inner.clone().block_host(pattern),
+        }
+    }
+
+    /// Allow a hostname pattern.
+    fn allow_host(&self, pattern: &str) -> Self {
+        Self {
+            inner: self.inner.clone().allow_host(pattern),
+        }
+    }
+
+    /// Build the custom policy.
+    fn build(&self) -> PyCustomPolicy {
+        PyCustomPolicy {
+            inner: self.inner.clone().build(),
+        }
+    }
+}
+
 /// Convert Rust error to Python exception.
 fn to_py_err(e: Error) -> PyErr {
     match e {
@@ -110,6 +170,22 @@ fn py_validate<'py>(py: Python<'py>, url: String, policy: PyPolicy) -> PyResult<
     })
 }
 
+/// Validate a URL with a custom policy synchronously.
+#[pyfunction]
+#[pyo3(name = "validate_custom_sync")]
+fn py_validate_custom_sync(url: &str, policy: &PyCustomPolicy) -> PyResult<PyValidated> {
+    // Need to run async in sync context
+    let policy_clone = policy.inner.clone();
+    let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(crate::validate_custom(url, &policy_clone)))
+    } else {
+        let rt =
+            tokio::runtime::Runtime::new().map_err(|e| UrlJailError::new_err(e.to_string()))?;
+        rt.block_on(crate::validate_custom(url, &policy_clone))
+    };
+    result.map(PyValidated::from).map_err(to_py_err)
+}
+
 /// Fetch a URL and return the response body as a string.
 /// This is the recommended way to safely fetch user-provided URLs.
 #[cfg(feature = "fetch")]
@@ -156,8 +232,11 @@ fn py_get_sync(url: &str, policy: Option<PyPolicy>) -> PyResult<String> {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPolicy>()?;
     m.add_class::<PyValidated>()?;
+    m.add_class::<PyPolicyBuilder>()?;
+    m.add_class::<PyCustomPolicy>()?;
     m.add_function(wrap_pyfunction!(py_validate_sync, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(py_validate_custom_sync, m)?)?;
 
     #[cfg(feature = "fetch")]
     {
