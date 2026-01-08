@@ -122,21 +122,35 @@ jobs:
     needs: [build-wheels, build-wheels-macos-arm, build-wheels-musllinux]
     runs-on: ubuntu-latest
     steps:
-      - name: Download all wheels
+      - name: Download wheels
         uses: actions/download-artifact@v4
         with:
+          path: artifacts
           pattern: wheel-*
-          path: dist
-          merge-multiple: true
+      
+      - name: Collect wheels
+        run: |
+          mkdir -p dist
+          find artifacts -name '*.whl' -exec mv {} dist/ \;
+          echo "Wheels found:"
+          ls -la dist/
+      
+      - name: Validate wheels
+        run: |
+          pip install wheel
+          for whl in dist/*.whl; do
+            echo "Checking $whl..."
+            python -m zipfile -l "$whl" > /dev/null || echo "INVALID: $whl"
+          done
       
       - name: Install twine
         run: pip install twine
       
       - name: Upload to PyPI
+        run: twine upload --skip-existing dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload --skip-existing dist/*
 
   # Create GitHub Release
   github-release:
