@@ -144,7 +144,7 @@ jobs:
           done
       
       - name: Install twine
-        run: pip install twine
+        run: pip install --upgrade twine
       
       - name: Upload to PyPI
         run: twine upload --skip-existing dist/*
