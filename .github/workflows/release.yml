@@ -36,14 +36,38 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  # Build Python wheels for multiple platforms
-  build-wheels:
-    name: Build wheel (${{ matrix.os }})
+  # Build Linux wheels (using manylinux container)
+  build-wheels-linux:
+    name: Build wheel (Linux py${{ matrix.python-version }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          args: --release --features python,fetch -o dist -i python${{ matrix.python-version }}
+          manylinux: auto
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+  # Build macOS/Windows wheels
+  build-wheels-other:
+    name: Build wheel (${{ matrix.os }} py${{ matrix.python-version }})
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
@@ -119,7 +143,7 @@ jobs:
   # Publish to PyPI
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-wheels, build-wheels-macos-arm, build-wheels-musllinux]
+    needs: [build-wheels-linux, build-wheels-other, build-wheels-macos-arm, build-wheels-musllinux]
     runs-on: ubuntu-latest
     steps:
       - name: Download wheels
