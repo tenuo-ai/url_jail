@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "url_jail"
-version = "0.1.7"
+version = "0.1.8"
 description = "SSRF-safe URL validation for Python"
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
@@ -35,3 +35,5 @@ all = ["requests>=2.20", "httpx>=0.20", "aiohttp>=3.8"]
 [tool.maturin]
 features = ["python"]
 python-source = "python"
+# Use metadata 2.1 to avoid license-file issue with PyPI
+compatibility = "manylinux2014"

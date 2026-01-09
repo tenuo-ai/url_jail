@@ -135,13 +135,25 @@ jobs:
           echo "Wheels found:"
           ls -la dist/
       
-      - name: Validate wheels
+      - name: Fix wheel metadata (strip license-file)
         run: |
           pip install wheel
           for whl in dist/*.whl; do
-            echo "Checking $whl..."
-            python -m zipfile -l "$whl" > /dev/null || echo "INVALID: $whl"
+            echo "Fixing $whl..."
+            # Unpack wheel
+            tmpdir=$(mktemp -d)
+            unzip -q "$whl" -d "$tmpdir"
+            
+            # Remove license-file line from METADATA
+            find "$tmpdir" -name "METADATA" -exec sed -i '/^License-File:/d' {} \;
+            
+            # Repack wheel
+            rm "$whl"
+            (cd "$tmpdir" && zip -q -r "$OLDPWD/$whl" .)
+            rm -rf "$tmpdir"
           done
+          echo "Fixed wheels:"
+          ls -la dist/
       
       - name: Install twine
         run: pip install --upgrade twine
