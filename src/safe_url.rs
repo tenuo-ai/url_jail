@@ -232,7 +232,10 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
         if part.starts_with("0x") || part.starts_with("0X") {
             return Err(Error::invalid_url(
                 original_url,
-                "hexadecimal IP encoding not allowed",
+                format!(
+                    "hexadecimal IP encoding detected ({}) - potential SSRF bypass attempt",
+                    host
+                ),
             ));
         }
     }
@@ -242,7 +245,10 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
         if host.chars().all(|c| c.is_ascii_digit()) {
             return Err(Error::invalid_url(
                 original_url,
-                "decimal IP encoding not allowed",
+                format!(
+                    "decimal IP encoding detected ({}) - potential SSRF bypass attempt",
+                    host
+                ),
             ));
         }
         if host.chars().all(|c| c.is_ascii_hexdigit())
@@ -250,12 +256,15 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
         {
             return Err(Error::invalid_url(
                 original_url,
-                "hexadecimal IP encoding not allowed",
+                format!(
+                    "hexadecimal IP encoding detected ({}) - potential SSRF bypass attempt",
+                    host
+                ),
             ));
         }
     }
 
-    // Short-form: 127.1 → 127.0.0.1, 127.0.1 → 127.0.0.1
+    // Short-form: 127.1 -> 127.0.0.1, 127.0.1 -> 127.0.0.1
     if (parts.len() == 2 || parts.len() == 3)
         && parts
             .iter()
@@ -263,7 +272,10 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
     {
         return Err(Error::invalid_url(
             original_url,
-            "short-form IP encoding not allowed",
+            format!(
+                "short-form IP encoding detected ({}) - potential SSRF bypass attempt",
+                host
+            ),
         ));
     }
 
@@ -277,7 +289,10 @@ fn check_non_standard_ip(host: &str, original_url: &str) -> Result<(), Error> {
             if part.len() > 1 && part.starts_with('0') && part.chars().all(|c| c.is_ascii_digit()) {
                 return Err(Error::invalid_url(
                     original_url,
-                    "octal IP encoding not allowed",
+                    format!(
+                        "octal IP encoding detected ({}) - potential SSRF bypass attempt",
+                        host
+                    ),
                 ));
             }
 

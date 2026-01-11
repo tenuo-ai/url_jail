@@ -123,7 +123,10 @@ pub async fn validate_with_options(
         return Err(Error::hostname_blocked(
             url,
             safe_url.host(),
-            format!("hostname {} is blocked", blocked_host),
+            format!(
+                "matches blocked pattern '{}' (cloud metadata)",
+                blocked_host
+            ),
         ));
     }
 
@@ -186,7 +189,10 @@ pub async fn validate_custom_with_options(
         return Err(Error::hostname_blocked(
             url,
             safe_url.host(),
-            format!("hostname {} is blocked", blocked_host),
+            format!(
+                "matches blocked pattern '{}' (cloud metadata)",
+                blocked_host
+            ),
         ));
     }
 

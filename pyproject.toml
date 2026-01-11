@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "url_jail"
-version = "0.1.10"
+version = "0.2.0"
 description = "SSRF-safe URL validation for Python"
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
@@ -30,7 +30,8 @@ dependencies = []
 requests = ["requests>=2.20"]
 httpx = ["httpx>=0.20"]
 aiohttp = ["aiohttp>=3.8"]
-all = ["requests>=2.20", "httpx>=0.20", "aiohttp>=3.8"]
+urllib3 = ["urllib3>=1.26"]
+all = ["requests>=2.20", "httpx>=0.20", "aiohttp>=3.8", "urllib3>=1.26"]
 
 [tool.maturin]
 features = ["python"]

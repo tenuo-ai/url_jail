@@ -10,6 +10,7 @@ __all__ = [
     "safe_httpx_client",
     "safe_httpx_async_client",
     "safe_aiohttp_session",
+    "safe_urllib3_pool",
 ]
 
 def safe_session(policy: Policy = Policy.PUBLIC_ONLY) -> "requests.Session":
@@ -26,6 +27,10 @@ def safe_httpx_async_client(policy: Policy = Policy.PUBLIC_ONLY, **kwargs) -> "h
 
 def safe_aiohttp_session(policy: Policy = Policy.PUBLIC_ONLY, **kwargs) -> "aiohttp.ClientSession":
     """Create an aiohttp.ClientSession with SSRF protection."""
+    ...
+
+def safe_urllib3_pool(policy: Policy = Policy.PUBLIC_ONLY, **kwargs) -> "urllib3.PoolManager":
+    """Create a urllib3.PoolManager with SSRF protection."""
     ...
 
 
@@ -48,4 +53,8 @@ class UrlJailConnector:
 
 class SafeClientSession:
     """aiohttp ClientSession with SSRF protection."""
+    def __init__(self, policy: Policy = Policy.PUBLIC_ONLY, **kwargs) -> None: ...
+
+class SafePoolManager:
+    """urllib3 PoolManager with SSRF protection."""
     def __init__(self, policy: Policy = Policy.PUBLIC_ONLY, **kwargs) -> None: ...

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-11
+
+### Added
+
+- Error helper methods on `Error`
+  - `is_blocked()` - check if error is a security block (SSRF, hostname, redirect)
+  - `is_retriable()` - check if error is temporary (DNS, timeout, HTTP)
+  - `url()` - extract the URL that caused the error
+
+- Comprehensive red team test suite (104 adversarial tests)
+  - URL encoding attacks
+  - Unicode/homoglyph bypasses
+  - IPv6 edge cases
+  - Redirect chain attacks
+  - IP range boundary tests
+
+- HTTPS limitation documentation for Python adapters
+  - Detailed explanation in `adapters/README.md`
+  - Comparison table of adapter capabilities
+  - Microservices deployment guidance
+
+- Threat model documentation in `SECURITY.md`
+  - Trust boundary diagram
+  - Explicit assumptions and non-assumptions
+
+### Changed
+
+- Improved error messages with more context
+  - IP blocks now include CIDR range (e.g., "loopback address (127.0.0.0/8)")
+  - Private IP errors suggest using `AllowPrivate` policy
+  - IP encoding errors show the detected value and flag as "potential SSRF bypass attempt"
+  - Custom policy errors reference the rule that blocked
+
+- `HostnameBlocked` error display changed from "SSRF blocked" to "Hostname blocked"
+
+- `InvalidUrl` error now includes the URL in the display format
+
 ## [0.1.0] - 2026-01-08
 
 ### Added
@@ -66,7 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `safe_session()` - SSRF-safe requests.Session
   - `safe_httpx_client()` / `safe_httpx_async_client()` - httpx adapters
   - `safe_aiohttp_session()` - aiohttp adapter
-  - Optional dependencies: `url_jail[requests]`, `[httpx]`, `[aiohttp]`, `[all]`
+  - `safe_urllib3_pool()` - urllib3 adapter
+  - Optional dependencies: `url_jail[requests]`, `[httpx]`, `[aiohttp]`, `[urllib3]`, `[all]`
 
 - Tracing support (feature: `tracing`)
   - Debug/warn logs for validation decisions
@@ -78,5 +116,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redirect chain validation with `fetch()`
 - Backslash in redirect URL rejected (prevents host override via URL crate behavior)
 
-[Unreleased]: https://github.com/tenuo-ai/url_jail/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tenuo-ai/url_jail/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/tenuo-ai/url_jail/compare/v0.1.10...v0.2.0
 [0.1.0]: https://github.com/tenuo-ai/url_jail/releases/tag/v0.1.0

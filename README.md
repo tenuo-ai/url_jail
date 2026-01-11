@@ -68,15 +68,15 @@ let response = client.get(&v.url).send().await?;
 pip install url_jail
 
 # With HTTP client adapters
-pip install url_jail[requests]  # or [httpx], [aiohttp], [all]
+pip install url_jail[requests]  # or [httpx], [aiohttp], [urllib3], [all]
 ```
 
 ```toml
 [dependencies]
-url_jail = "0.1"
+url_jail = "0.2"
 
 # Enable fetch() for redirect chain validation
-url_jail = { version = "0.1", features = ["fetch"] }
+url_jail = { version = "0.2", features = ["fetch"] }
 ```
 
 ## Policies
@@ -109,6 +109,11 @@ from url_jail.adapters import safe_aiohttp_session
 async with safe_aiohttp_session() as session:
     async with session.get(user_url) as response:
         body = await response.text()
+
+# urllib3
+from url_jail.adapters import safe_urllib3_pool
+pool = safe_urllib3_pool()
+response = pool.request("GET", user_url)
 ```
 
 ## Advanced: Custom Blocklist

@@ -2,10 +2,10 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
-| 0.1.x   | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| 0.2.x   | Yes       |
+| 0.1.x   | Yes       |
 
 ## Reporting a Vulnerability
 
@@ -124,6 +124,7 @@ For LangChain specifically, wrap URL fetching with `url_jail` validation before 
 
 - **Time-of-check/time-of-use (TOCTOU)**: If you don't use the returned IP immediately, DNS could change. Always connect right after validation.
 - **DNS rebinding (if misused)**: Protection only works if you use `Validated.ip` for the connection, not a second DNS lookup.
+- **Python adapters with HTTPS**: The `safe_session()` (requests) and `safe_urllib3_pool()` adapters cannot pin HTTPS connections to the validated IP without breaking TLS certificate validation. Use `get_sync()` or `safe_httpx_client()` for full HTTPS protection. See `python/url_jail/adapters/README.md` for details.
 - **Application-layer vulnerabilities**: We validate URLs, not request content or headers.
 - **DNS cache poisoning**: Out of scope. Use DNSSEC at the resolver level.
 - **Non-HTTP protocols**: Only `http://` and `https://` schemes are validated.

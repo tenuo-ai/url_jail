@@ -37,23 +37,23 @@ pub fn is_ip_blocked(ip: IpAddr, policy: Policy) -> Option<&'static str> {
 fn is_ipv4_blocked(ip: Ipv4Addr, policy: Policy) -> Option<&'static str> {
     // 0.0.0.0 is the unspecified address - always blocked
     if ip.is_unspecified() {
-        return Some("unspecified address");
+        return Some("unspecified address (0.0.0.0) - blocked in all policies");
     }
 
     if ip.is_loopback() {
-        return Some("loopback address");
+        return Some("loopback address (127.0.0.0/8) - blocked in all policies");
     }
 
     if ip.is_link_local() {
-        return Some("link-local address");
+        return Some("link-local address (169.254.0.0/16) - blocked in all policies");
     }
 
     if is_metadata_ipv4(ip) {
-        return Some("cloud metadata endpoint");
+        return Some("cloud metadata endpoint - blocked in all policies");
     }
 
     if policy == Policy::PublicOnly && ip.is_private() {
-        return Some("private address");
+        return Some("private address - use AllowPrivate policy to permit");
     }
 
     None
@@ -62,12 +62,12 @@ fn is_ipv4_blocked(ip: Ipv4Addr, policy: Policy) -> Option<&'static str> {
 fn is_ipv6_blocked(ip: Ipv6Addr, policy: Policy) -> Option<&'static str> {
     // :: is the unspecified address - always blocked
     if ip.is_unspecified() {
-        return Some("unspecified address");
+        return Some("unspecified address (::) - blocked in all policies");
     }
 
     // Check loopback FIRST (::1) before any IPv4 embedding checks
     if ip.is_loopback() {
-        return Some("loopback address");
+        return Some("loopback address (::1) - blocked in all policies");
     }
 
     // Check for IPv4-mapped IPv6 (::ffff:x.x.x.x)
@@ -95,15 +95,15 @@ fn is_ipv6_blocked(ip: Ipv6Addr, policy: Policy) -> Option<&'static str> {
 
     // is_unicast_link_local is unstable, so we check manually
     if is_ipv6_link_local(ip) {
-        return Some("link-local address");
+        return Some("link-local address (fe80::/10) - blocked in all policies");
     }
 
     if is_metadata_ipv6(ip) {
-        return Some("cloud metadata endpoint");
+        return Some("cloud metadata endpoint - blocked in all policies");
     }
 
     if policy == Policy::PublicOnly && is_ipv6_unique_local(ip) {
-        return Some("private address");
+        return Some("private address (fc00::/7) - use AllowPrivate policy to permit");
     }
 
     None

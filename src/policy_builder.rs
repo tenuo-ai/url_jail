@@ -100,7 +100,7 @@ impl CustomPolicy {
         // Check explicit blocklist
         for cidr in &self.blocked_cidrs {
             if cidr.contains(&ip) {
-                return Err(format!("{} is in blocked CIDR {}", ip, cidr));
+                return Err(format!("blocked by custom policy CIDR rule: {}", cidr));
             }
         }
 
@@ -130,8 +130,8 @@ impl CustomPolicy {
         for pattern in &self.blocked_hosts {
             if matches_hostname_pattern(&host_lower, pattern) {
                 return Err(format!(
-                    "hostname {} matches blocked pattern {}",
-                    host, pattern
+                    "blocked by custom policy hostname rule: {}",
+                    pattern
                 ));
             }
         }
@@ -531,7 +531,7 @@ mod tests {
     // ==================== Error message tests ====================
 
     #[test]
-    fn test_error_message_contains_ip() {
+    fn test_error_message_contains_cidr_rule() {
         let policy = PolicyBuilder::new(Policy::AllowPrivate)
             .block_cidr("10.0.0.0/8")
             .build();
@@ -539,18 +539,36 @@ mod tests {
         let err = policy
             .is_ip_allowed("10.1.2.3".parse().unwrap())
             .unwrap_err();
-        assert!(err.contains("10.1.2.3"));
-        assert!(err.contains("10.0.0.0/8"));
+        // Error should mention the CIDR rule that blocked it
+        assert!(
+            err.contains("10.0.0.0/8"),
+            "Error should contain CIDR: {}",
+            err
+        );
+        assert!(
+            err.contains("custom policy"),
+            "Error should mention custom policy: {}",
+            err
+        );
     }
 
     #[test]
-    fn test_error_message_contains_hostname() {
+    fn test_error_message_contains_hostname_rule() {
         let policy = PolicyBuilder::new(Policy::PublicOnly)
             .block_host("*.internal.com")
             .build();
 
         let err = policy.is_hostname_allowed("api.internal.com").unwrap_err();
-        assert!(err.contains("api.internal.com"));
-        assert!(err.contains("*.internal.com"));
+        // Error should mention the hostname pattern that blocked it
+        assert!(
+            err.contains("*.internal.com"),
+            "Error should contain pattern: {}",
+            err
+        );
+        assert!(
+            err.contains("custom policy"),
+            "Error should mention custom policy: {}",
+            err
+        );
     }
 }

@@ -142,6 +142,69 @@ class TestInvalidUrls:
             validate_sync("http://user:pass@example.com/", Policy.PUBLIC_ONLY)
 
 
+class TestAdversarialInputs:
+    """Tests for SSRF bypass attempts using various encoding tricks."""
+
+    def test_backslash_url_bypass(self):
+        """Backslash should not bypass host parsing."""
+        # Some parsers treat \ as / (Windows path separator)
+        with pytest.raises((InvalidUrl, UrlJailError)):
+            validate_sync("http://localhost\\@evil.com/", Policy.PUBLIC_ONLY)
+
+    def test_url_fragment_bypass(self):
+        """Fragment should not affect host parsing."""
+        # The host should be 127.0.0.1, not evil.com
+        with pytest.raises(SsrfBlocked):
+            validate_sync("http://127.0.0.1#@evil.com/", Policy.PUBLIC_ONLY)
+
+    def test_port_userinfo_bypass(self):
+        """Port in userinfo should not bypass validation."""
+        with pytest.raises(InvalidUrl):
+            validate_sync("http://127.0.0.1:80@evil.com/", Policy.PUBLIC_ONLY)
+
+    def test_mixed_case_localhost(self):
+        """Mixed case localhost variants should be blocked."""
+        with pytest.raises(SsrfBlocked):
+            validate_sync("http://LocalHost/", Policy.PUBLIC_ONLY)
+
+    def test_localhost_with_dot(self):
+        """localhost. (with trailing dot) should be blocked."""
+        with pytest.raises(SsrfBlocked):
+            validate_sync("http://localhost./", Policy.PUBLIC_ONLY)
+
+    def test_zero_padded_ip(self):
+        """Zero-padded IPs should be rejected."""
+        with pytest.raises(InvalidUrl):
+            validate_sync("http://127.000.000.001/", Policy.PUBLIC_ONLY)
+
+    def test_ipv6_localhost_variants(self):
+        """IPv6 localhost variants should be blocked."""
+        with pytest.raises(SsrfBlocked):
+            validate_sync("http://[0:0:0:0:0:0:0:1]/", Policy.PUBLIC_ONLY)
+
+    def test_ipv6_compressed_localhost(self):
+        """Compressed IPv6 localhost should be blocked."""
+        with pytest.raises(SsrfBlocked):
+            validate_sync("http://[::1]/", Policy.PUBLIC_ONLY)
+
+    def test_aws_metadata_ip_variants(self):
+        """AWS metadata IP variants should be blocked."""
+        with pytest.raises((SsrfBlocked, InvalidUrl, HostnameBlocked)):
+            validate_sync("http://169.254.169.254/", Policy.PUBLIC_ONLY)
+        with pytest.raises((SsrfBlocked, InvalidUrl, HostnameBlocked)):
+            validate_sync("http://[::ffff:169.254.169.254]/", Policy.PUBLIC_ONLY)
+
+    def test_gcp_metadata_hostname(self):
+        """GCP metadata hostname should be blocked."""
+        with pytest.raises((HostnameBlocked, DnsError, UrlJailError)):
+            validate_sync("http://metadata.google.internal/", Policy.PUBLIC_ONLY)
+
+    def test_azure_metadata_hostname(self):
+        """Azure metadata hostname should be blocked."""
+        with pytest.raises((HostnameBlocked, DnsError, UrlJailError)):
+            validate_sync("http://169.254.169.254/metadata/instance", Policy.PUBLIC_ONLY)
+
+
 class TestDnsErrors:
     """Tests for DNS error handling."""
 

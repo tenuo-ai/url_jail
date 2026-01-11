@@ -14,7 +14,6 @@ import socket
 
 import aiohttp
 from aiohttp import ClientSession, TCPConnector
-from yarl import URL
 
 from url_jail import Policy, validate
 
@@ -58,30 +57,10 @@ class UrlJailConnector(TCPConnector):
         ]
 
 
-class SafeClientSession(ClientSession):
-    """aiohttp ClientSession with SSRF protection built-in."""
-    
-    def __init__(self, policy: Policy = Policy.PUBLIC_ONLY, **kwargs):
-        connector = kwargs.pop("connector", None)
-        if connector is None:
-            connector = UrlJailConnector(policy=policy)
-        elif not isinstance(connector, UrlJailConnector):
-            # User provided their own connector, wrap it
-            # Note: This won't work perfectly, so we warn
-            import warnings
-            warnings.warn(
-                "Custom connector provided. SSRF protection may not work. "
-                "Use UrlJailConnector for full protection.",
-                UserWarning,
-            )
-        
-        super().__init__(connector=connector, **kwargs)
-
-
 def safe_aiohttp_session(
     policy: Policy = Policy.PUBLIC_ONLY,
     **kwargs,
-) -> SafeClientSession:
+) -> ClientSession:
     """Create an aiohttp.ClientSession with SSRF protection.
     
     All requests made through this session will be validated against the
@@ -99,4 +78,15 @@ def safe_aiohttp_session(
         ...     async with session.get("https://example.com/api") as response:
         ...         body = await response.text()
     """
-    return SafeClientSession(policy=policy, **kwargs)
+    connector = kwargs.pop("connector", None)
+    if connector is not None:
+        import warnings
+        warnings.warn(
+            "Custom connector provided and will be ignored. "
+            "Use UrlJailConnector for SSRF protection.",
+            UserWarning,
+        )
+    
+    connector = UrlJailConnector(policy=policy)
+    return ClientSession(connector=connector, **kwargs)
+
