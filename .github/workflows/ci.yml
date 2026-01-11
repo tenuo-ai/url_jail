@@ -69,25 +69,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Generate coverage
-        run: cargo llvm-cov --features fetch --lcov --output-path lcov.info
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          fail_ci_if_error: false
-
   python:
     name: Python Bindings
     runs-on: ubuntu-latest
@@ -124,8 +105,11 @@ jobs:
           "
 
   python-tests:
-    name: Python Tests
-    runs-on: ubuntu-latest
+    name: Python Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -141,4 +125,3 @@ jobs:
           maturin develop --features python,fetch
       - name: Run Python tests
         run: pytest tests/ -v --tb=short
-
