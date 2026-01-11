@@ -12,7 +12,7 @@
 If you discover a security vulnerability in `url_jail`, please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue for security vulnerabilities
-2. Email the maintainers directly or use GitHub's private vulnerability reporting
+2. **Email**: [security@tenuo.dev](mailto:security@tenuo.dev)
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
