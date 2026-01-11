@@ -2,34 +2,42 @@
 
 SSRF-safe URL validation for Rust and Python.
 
-Helps mitigate SSRF vulnerabilities like [CVE-2024-0243](https://nvd.nist.gov/vuln/detail/CVE-2024-0243) and [CVE-2025-2828](https://nvd.nist.gov/vuln/detail/CVE-2025-2828) (LangChain SSRF).
-
-> **Note**: This library has not undergone a formal security audit. See [SECURITY.md](SECURITY.md) for details.
-
 ## The Problem
 
+Your application fetches a user-provided URL:
+
 ```python
-response = requests.get(user_url)  # AWS credentials leaked via 169.254.169.254
+response = requests.get(user_url)
 ```
 
-## Why url_jail?
+An attacker submits `http://169.254.169.254/latest/meta-data/iam/credentials`.
 
-String-based URL blocklists fail because attackers can encode IPs in unexpected ways:
+**Result**: Your AWS keys are in their inbox. Your S3 buckets are public. Your cloud bill is six figures.
 
-| Attack | Naive Blocklist | url_jail |
-|--------|-----------------|----------|
-| `http://0x7f000001/` (hex IP) | PASS | BLOCKED |
-| `http://0177.0.0.1/` (octal IP) | PASS | BLOCKED |
-| `http://2130706433/` (decimal IP) | PASS | BLOCKED |
-| `http://127.1/` (short-form) | PASS | BLOCKED |
-| `http://[::ffff:127.0.0.1]/` (IPv6-mapped) | PASS | BLOCKED |
-| `http://169.254.169.254/` | BLOCKED | BLOCKED |
-| `http://metadata.google.internal/` | Maybe | BLOCKED |
-| DNS rebinding (resolves to 127.0.0.1) | PASS | BLOCKED* |
+This is Server-Side Request Forgery (SSRF), the vulnerability behind:
+- [CVE-2024-0243](https://nvd.nist.gov/vuln/detail/CVE-2024-0243): LangChain RecursiveUrlLoader (CVSS 8.6)
+- [CVE-2025-2828](https://nvd.nist.gov/vuln/detail/CVE-2025-2828): LangChain RequestsToolkit (CVSS 9.1)
+- Capital One 2019 breach (100M+ records)
+
+### "I'll just block 169.254.169.254"
+
+Attackers encode IPs in ways your blocklist won't catch:
+
+| Attack | Your Blocklist | url_jail |
+|--------|----------------|----------|
+| `http://0x7f000001/` (hex) | Passes | Blocked |
+| `http://0177.0.0.1/` (octal) | Passes | Blocked |
+| `http://2130706433/` (decimal) | Passes | Blocked |
+| `http://127.1/` (short-form) | Passes | Blocked |
+| `http://[::ffff:127.0.0.1]/` (IPv6-mapped) | Passes | Blocked |
+| `http://metadata.google.internal/` | Maybe | Blocked |
+| DNS rebinding | Passes | Blocked* |
 
 \* When using `get_sync()` or the returned `Validated.ip` directly.
 
-**url_jail validates after DNS resolution**, so encoding tricks and DNS rebinding don't work.
+**url_jail validates after DNS resolution.** Encoding tricks don't work.
+
+> **Note**: This library has not undergone a formal security audit. See [SECURITY.md](SECURITY.md).
 
 ## The Solution
 
