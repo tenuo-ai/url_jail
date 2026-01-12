@@ -201,6 +201,8 @@ authorizer.register_tool("fetch_url", fetch_url)
 |---------|-------------|
 | [tenuo](https://github.com/tenuo-ai/tenuo) | Capability-based authorization for LLM agents |
 | [proc_jail](https://github.com/tenuo-ai/proc_jail) | Safe process execution guard |
+| [path_jail](https://github.com/tenuo-ai/path_jail) | Path traversal protection |
+| [safe_unzip](https://github.com/tenuo-ai/safe_unzip) | Zip bomb and path traversal safe extraction |
 
 ## License
 
