@@ -12,7 +12,7 @@ response = requests.get(user_url)
 
 An attacker submits `http://169.254.169.254/latest/meta-data/iam/credentials`.
 
-**Result**: Your AWS keys are in their inbox. Your S3 buckets are public. Your cloud bill is six figures.
+**Result**: Your server leaks its AWS credentials to the attacker.
 
 This is Server-Side Request Forgery (SSRF), the vulnerability behind:
 - [CVE-2024-0243](https://nvd.nist.gov/vuln/detail/CVE-2024-0243): LangChain RecursiveUrlLoader (CVSS 8.6)
