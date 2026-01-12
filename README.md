@@ -174,7 +174,34 @@ match validate_sync("http://127.0.0.1/", Policy::PublicOnly) {
 | `fetch` | `fetch()` / `get_sync()` with redirect validation |
 | `tracing` | Logging for validation decisions |
 
+## Integration with Tenuo
+
+Use url_jail as a building block in Tenuo-authorized AI agents:
+
+```python
+from tenuo import Authorizer
+from url_jail import get_sync, SsrfBlocked
+
+# Agent tool that fetches URLs safely
+def fetch_url(url: str) -> str:
+    """Fetch URL content. SSRF-safe via url_jail."""
+    try:
+        return get_sync(url)
+    except SsrfBlocked as e:
+        return f"Blocked: {e}"
+
+# Register with Tenuo authorizer
+authorizer = Authorizer()
+authorizer.register_tool("fetch_url", fetch_url)
+```
+
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| [tenuo](https://github.com/tenuo-ai/tenuo) | Capability-based authorization for LLM agents |
+| [proc_jail](https://github.com/tenuo-ai/proc_jail) | Safe process execution guard |
+
 ## License
 
 MIT OR Apache-2.0
-
