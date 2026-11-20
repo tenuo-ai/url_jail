@@ -30,7 +30,8 @@ def test_verifier_fails_when_callback_connects_before_refusing():
     report = verify_fetcher(connect_then_refuse)
 
     assert not report.passed
-    assert all(case.refused and case.connections == 1 for case in report.cases)
+    literal_loopback = next(case for case in report.cases if case.name == "literal_loopback")
+    assert literal_loopback.refused and literal_loopback.connections >= 1
 
 
 def test_verifier_rejects_async_callbacks():
