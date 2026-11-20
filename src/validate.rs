@@ -258,7 +258,8 @@ async fn resolve_and_verify_dns(
     let resolve_future = async {
         let resolver = TokioResolver::builder_tokio()
             .map_err(|e| Error::dns_error(host, e.to_string()))?
-            .build();
+            .build()
+            .map_err(|e| Error::dns_error(host, e.to_string()))?;
 
         let response = resolver
             .lookup_ip(host)
@@ -299,7 +300,8 @@ async fn resolve_dns_with_timeout(host: &str, timeout: Duration) -> Result<IpAdd
     let resolve_future = async {
         let resolver = TokioResolver::builder_tokio()
             .map_err(|e| Error::dns_error(host, e.to_string()))?
-            .build();
+            .build()
+            .map_err(|e| Error::dns_error(host, e.to_string()))?;
 
         let response = resolver
             .lookup_ip(host)

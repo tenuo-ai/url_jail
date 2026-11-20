@@ -29,7 +29,7 @@ pyo3::create_exception!(url_jail, TooManyRedirects, UrlJailError);
 pyo3::create_exception!(url_jail, HttpError, UrlJailError);
 
 /// Policy enum for Python.
-#[pyclass(name = "Policy", eq, eq_int)]
+#[pyclass(name = "Policy", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyPolicy {
     #[pyo3(name = "PUBLIC_ONLY")]
