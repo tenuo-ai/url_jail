@@ -7,7 +7,15 @@ Note: These tests require the optional dependencies:
   pip install url_jail[all]
 """
 
+import os
+
 import pytest
+
+
+requires_network = pytest.mark.skipif(
+    os.environ.get("URL_JAIL_RUN_NETWORK_TESTS") != "1",
+    reason="external network tests require URL_JAIL_RUN_NETWORK_TESTS=1",
+)
 
 
 class TestRequestsAdapter:
@@ -20,6 +28,7 @@ class TestRequestsAdapter:
         from url_jail.adapters import safe_session
         return safe_session()
 
+    @requires_network
     def test_fetch_public_url(self, safe_session):
         """Should fetch public URLs successfully."""
         response = safe_session.get("https://httpbin.org/get")
@@ -64,6 +73,7 @@ class TestHttpxAdapter:
         from url_jail.adapters import safe_httpx_client
         return safe_httpx_client()
 
+    @requires_network
     def test_fetch_public_url(self, safe_client):
         """Should fetch public URLs successfully."""
         response = safe_client.get("https://httpbin.org/get")
@@ -96,6 +106,7 @@ class TestHttpxAsyncAdapter:
         return safe_httpx_async_client()
 
     @pytest.mark.asyncio
+    @requires_network
     async def test_fetch_public_url(self, safe_async_client):
         """Should fetch public URLs successfully."""
         async with safe_async_client as client:
@@ -119,6 +130,7 @@ class TestAiohttpAdapter:
     """
 
     @pytest.mark.asyncio
+    @requires_network
     async def test_fetch_public_url(self):
         """Should fetch public URLs successfully."""
         aiohttp = pytest.importorskip("aiohttp")
@@ -151,6 +163,7 @@ class TestUrllib3Adapter:
         from url_jail.adapters import safe_urllib3_pool
         return safe_urllib3_pool()
 
+    @requires_network
     def test_fetch_public_url(self, safe_pool):
         """Should fetch public URLs successfully."""
         response = safe_pool.request("GET", "https://httpbin.org/get")

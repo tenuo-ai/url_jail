@@ -2,7 +2,7 @@
 name = "url_jail"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 description = "SSRF-safe URL validation for Rust and Python"
 repository = "https://github.com/tenuo-ai/url_jail"
@@ -17,10 +17,10 @@ url = "2"
 ipnet = "2"
 idna = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["net", "rt", "time"] }
-hickory-resolver = "0.25"
-pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
+hickory-resolver = "0.26"
+pyo3 = { version = "0.30", features = ["extension-module"], optional = true }
+pyo3-async-runtimes = { version = "0.30", features = ["tokio-runtime"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
 tracing = { version = "0.1", optional = true }
 
@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = []
-python = ["pyo3", "pyo3-async-runtimes"]
+python = ["pyo3", "pyo3-async-runtimes", "verify"]
 fetch = ["reqwest"]
 tracing = ["dep:tracing"]
+verify = []

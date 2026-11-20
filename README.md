@@ -122,6 +122,51 @@ pool = safe_urllib3_pool()
 response = pool.request("GET", user_url)
 ```
 
+## Verify a Rust Fetch Path
+
+The optional `verify` feature tests the asynchronous callback your application
+actually uses for untrusted URLs. A case passes only when the callback refuses
+the URL and the controlled local service observes no TCP connection.
+
+```toml
+url_jail = { version = "0.2", features = ["verify"] }
+```
+
+```rust,no_run
+use url_jail::{verify_fetcher, Policy, validate};
+
+# async fn example() -> std::io::Result<()> {
+let report = verify_fetcher(|url| async move {
+    validate(&url, Policy::PublicOnly).await.map(|_| ())
+}).await?;
+
+assert!(report.passed());
+# Ok(())
+# }
+```
+
+The initial suite covers literal loopback and decimal IPv4 forms. It proves
+only that those blocked cases do not establish a local TCP connection; it does
+not demonstrate that the callback can fetch an allowed public URL. It runs only
+against loopback and complements, rather than replaces, network egress policy.
+
+Python exposes the same Rust-backed test cases for synchronous callbacks:
+
+```python
+from url_jail import verify_fetcher
+from myapp.preview import fetch_preview
+
+report = verify_fetcher(fetch_preview)
+assert report.passed
+for case in report.cases:
+    print(case.name, case.passed, case.connections)
+```
+
+An exception after a TCP connection is not a passing result. A case passes only
+if the local listener received no TCP connection. This verifies blocked-path
+behavior, not availability of public fetches. Async callbacks are not supported
+by this synchronous API.
+
 ## Advanced: Custom Blocklist
 
 ```rust

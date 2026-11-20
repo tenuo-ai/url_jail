@@ -4,7 +4,15 @@ Async tests for url_jail Python bindings.
 Run with: pytest tests/test_async.py
 """
 
+import os
+
 import pytest
+
+
+requires_network = pytest.mark.skipif(
+    os.environ.get("URL_JAIL_RUN_NETWORK_TESTS") != "1",
+    reason="external network tests require URL_JAIL_RUN_NETWORK_TESTS=1",
+)
 
 
 @pytest.fixture
@@ -45,6 +53,7 @@ class TestGetAsync:
     """Tests for async get function (requires fetch feature)."""
 
     @pytest.mark.asyncio
+    @requires_network
     async def test_get_public_url(self):
         """Should fetch public URLs."""
         try:
@@ -68,6 +77,7 @@ class TestGetAsync:
 class TestGetSync:
     """Tests for sync get function (requires fetch feature)."""
 
+    @requires_network
     def test_get_sync_public_url(self):
         """Should fetch public URLs."""
         try:

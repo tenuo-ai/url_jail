@@ -3,8 +3,12 @@
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
+use std::sync::{Arc, Mutex};
 
-use crate::{Error, Policy as RustPolicy, Validated as RustValidated};
+use crate::{
+    Error, Policy as RustPolicy, Validated as RustValidated,
+    VerificationCase as RustVerificationCase, VerificationReport as RustVerificationReport,
+};
 
 // Base exception
 pyo3::create_exception!(url_jail, UrlJailError, PyException);
@@ -26,7 +30,7 @@ pyo3::create_exception!(url_jail, TooManyRedirects, UrlJailError);
 pyo3::create_exception!(url_jail, HttpError, UrlJailError);
 
 /// Policy enum for Python.
-#[pyclass(name = "Policy", eq, eq_int)]
+#[pyclass(name = "Policy", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyPolicy {
     #[pyo3(name = "PUBLIC_ONLY")]
@@ -69,6 +73,67 @@ impl From<RustValidated> for PyValidated {
             url: v.url,
             https: v.https,
         }
+    }
+}
+
+/// Connection-level result for one adversarial fetch test.
+#[pyclass(name = "VerificationCase", frozen)]
+#[derive(Clone)]
+pub struct PyVerificationCase {
+    #[pyo3(get)]
+    pub name: String,
+    #[pyo3(get)]
+    pub url: String,
+    #[pyo3(get)]
+    pub refused: bool,
+    #[pyo3(get)]
+    pub connections: usize,
+}
+
+impl From<RustVerificationCase> for PyVerificationCase {
+    fn from(case: RustVerificationCase) -> Self {
+        Self {
+            name: case.name.to_string(),
+            url: case.url,
+            refused: case.refused,
+            connections: case.connections,
+        }
+    }
+}
+
+#[pymethods]
+impl PyVerificationCase {
+    #[getter]
+    fn passed(&self) -> bool {
+        self.refused && self.connections == 0
+    }
+}
+
+/// Connection-level results for a supplied Python fetch callback.
+#[pyclass(name = "VerificationReport", frozen)]
+#[derive(Clone)]
+pub struct PyVerificationReport {
+    cases: Vec<PyVerificationCase>,
+}
+
+impl From<RustVerificationReport> for PyVerificationReport {
+    fn from(report: RustVerificationReport) -> Self {
+        Self {
+            cases: report.cases.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[pymethods]
+impl PyVerificationReport {
+    #[getter]
+    fn cases(&self) -> Vec<PyVerificationCase> {
+        self.cases.clone()
+    }
+
+    #[getter]
+    fn passed(&self) -> bool {
+        self.cases.iter().all(PyVerificationCase::passed)
     }
 }
 
@@ -201,6 +266,66 @@ fn py_validate_custom_sync(url: &str, policy: &PyCustomPolicy) -> PyResult<PyVal
     result.map(PyValidated::from).map_err(to_py_err)
 }
 
+/// Verify a synchronous application's actual user-URL fetch path.
+///
+/// The callback is invoked with controlled loopback URLs. A test passes only
+/// when the callback raises and the controlled listener observes no TCP
+/// connection. Async callbacks are not accepted by this synchronous API.
+#[pyfunction]
+#[pyo3(name = "verify_fetcher")]
+fn py_verify_fetcher(fetch: Bound<'_, PyAny>) -> PyResult<PyVerificationReport> {
+    if !fetch.is_callable() {
+        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "fetch must be a callable accepting one URL argument",
+        ));
+    }
+
+    let callback = fetch.unbind();
+    let callback_error = Arc::new(Mutex::new(None));
+    let verify = || {
+        let callback_error = Arc::clone(&callback_error);
+        crate::verify_fetcher(move |url| {
+            let result = Python::attach(|py| {
+                let result = callback.bind(py).call1((url,));
+                match result {
+                    Ok(value) if value.hasattr("__await__").unwrap_or(false) => {
+                        // Coroutines warn when dropped without being awaited. Close them
+                        // before reporting the synchronous-API contract violation.
+                        let _ = value.call_method0("close");
+                        *callback_error.lock().expect("callback error lock poisoned") = Some(
+                            "fetch must be synchronous; async callbacks and awaitable return values are unsupported"
+                                .to_string(),
+                        );
+                        Err(())
+                    }
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(()),
+                }
+            });
+            std::future::ready(result)
+        })
+    };
+
+    let report = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(verify()))
+    } else {
+        let runtime = tokio::runtime::Runtime::new()
+            .map_err(|error| UrlJailError::new_err(error.to_string()))?;
+        runtime.block_on(verify())
+    }
+    .map_err(|error| UrlJailError::new_err(error.to_string()))?;
+
+    if let Some(message) = callback_error
+        .lock()
+        .expect("callback error lock poisoned")
+        .take()
+    {
+        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(message));
+    }
+
+    Ok(report.into())
+}
+
 /// Fetch a URL and return the response body as a string.
 /// This is the recommended way to safely fetch user-provided URLs.
 #[cfg(feature = "fetch")]
@@ -247,11 +372,14 @@ fn py_get_sync(url: &str, policy: Option<PyPolicy>) -> PyResult<String> {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPolicy>()?;
     m.add_class::<PyValidated>()?;
+    m.add_class::<PyVerificationCase>()?;
+    m.add_class::<PyVerificationReport>()?;
     m.add_class::<PyPolicyBuilder>()?;
     m.add_class::<PyCustomPolicy>()?;
     m.add_function(wrap_pyfunction!(py_validate_sync, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate_custom_sync, m)?)?;
+    m.add_function(wrap_pyfunction!(py_verify_fetcher, m)?)?;
 
     #[cfg(feature = "fetch")]
     {
