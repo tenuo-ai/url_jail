@@ -110,6 +110,7 @@
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `fetch` | `fetch()`, `fetch_sync()` with redirect chain validation |
+//! | `verify` | `verify_fetcher()` connection-level smoke tests |
 //! | `tracing` | Debug/warn logs for validation decisions |
 //! | `python` | Python bindings via PyO3 |
 //!
@@ -163,6 +164,9 @@ mod policy_builder;
 mod safe_url;
 mod validate;
 
+#[cfg(feature = "verify")]
+mod verify;
+
 #[cfg(feature = "fetch")]
 mod fetch;
 
@@ -174,6 +178,9 @@ pub use validate::{
     validate, validate_custom, validate_custom_with_options, validate_sync, validate_with_options,
     ValidateOptions, Validated,
 };
+
+#[cfg(feature = "verify")]
+pub use verify::{verify_fetcher, VerificationCase, VerificationReport};
 
 #[cfg(feature = "fetch")]
 pub use fetch::{fetch, fetch_sync, FetchResult};

@@ -15,7 +15,7 @@ Example:
     >>> body = get_sync(url, Policy.ALLOW_PRIVATE)  # Allow private IPs
 """
 
-from typing import Optional
+from typing import Any, Callable, Optional, Sequence
 
 class Policy:
     """Validation policy determining what IPs are allowed.
@@ -56,6 +56,19 @@ class Validated:
     port: int
     url: str
     https: bool
+
+class VerificationCase:
+    """Connection-level result for one controlled adversarial fetch test."""
+    name: str
+    url: str
+    refused: bool
+    connections: int
+    passed: bool
+
+class VerificationReport:
+    """Connection-level results for a supplied synchronous fetch callback."""
+    cases: Sequence[VerificationCase]
+    passed: bool
 
 class CustomPolicy:
     """Custom policy with user-defined blocklists and allowlists.
@@ -322,6 +335,14 @@ def validate_custom_sync(url: str, policy: CustomPolicy) -> Validated:
         >>> 
         >>> policy = PolicyBuilder(Policy.ALLOW_PRIVATE).block_cidr("10.0.0.0/8").build()
         >>> result = validate_custom_sync("https://example.com", policy)
+    """
+    ...
+
+def verify_fetcher(fetch: Callable[[str], Any]) -> VerificationReport:
+    """Verify a synchronous application's actual user-URL fetch path.
+
+    Each controlled case passes only when ``fetch`` raises and the local
+    listener observes no TCP connection. Async callbacks are unsupported.
     """
     ...
 

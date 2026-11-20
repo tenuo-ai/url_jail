@@ -34,5 +34,5 @@ urllib3 = ["urllib3>=1.26"]
 all = ["requests>=2.20", "httpx>=0.20", "aiohttp>=3.8", "urllib3>=1.26"]
 
 [tool.maturin]
-features = ["python"]
+features = ["python", "verify"]
 python-source = "python"
