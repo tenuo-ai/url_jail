@@ -202,6 +202,7 @@ mod tests {
     // ==================== Basic fetch tests ====================
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_simple() {
         let result = fetch("https://httpbin.org/get", Policy::PublicOnly).await;
         assert!(result.is_ok());
@@ -210,6 +211,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_redirect() {
         let result = fetch("https://httpbin.org/redirect/1", Policy::PublicOnly).await;
         assert!(result.is_ok());
@@ -226,6 +228,7 @@ mod tests {
     // ==================== fetch_sync tests ====================
 
     #[test]
+    #[ignore = "requires external httpbin.org access"]
     fn test_fetch_sync_simple() {
         let result = fetch_sync("https://httpbin.org/get", Policy::PublicOnly);
         assert!(result.is_ok());
@@ -254,6 +257,7 @@ mod tests {
     // ==================== Multiple redirect tests ====================
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_multiple_redirects() {
         let result = fetch("https://httpbin.org/redirect/3", Policy::PublicOnly).await;
         assert!(result.is_ok());
@@ -262,6 +266,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_absolute_redirect() {
         let result = fetch(
             "https://httpbin.org/absolute-redirect/1",
@@ -272,6 +277,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_relative_redirect() {
         let result = fetch(
             "https://httpbin.org/relative-redirect/1",
@@ -305,6 +311,7 @@ mod tests {
     // ==================== FetchResult tests ====================
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_result_chain_has_validated_info() {
         let result = fetch("https://httpbin.org/get", Policy::PublicOnly)
             .await
@@ -318,6 +325,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_result_response_status() {
         let result = fetch("https://httpbin.org/status/200", Policy::PublicOnly)
             .await
@@ -327,6 +335,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_result_response_status_404() {
         let result = fetch("https://httpbin.org/status/404", Policy::PublicOnly)
             .await
@@ -384,6 +393,7 @@ mod tests {
     // ==================== Edge cases ====================
 
     #[tokio::test]
+    #[ignore = "requires external httpbin.org access"]
     async fn test_fetch_with_query_params() {
         let result = fetch(
             "https://httpbin.org/get?foo=bar&baz=qux",
