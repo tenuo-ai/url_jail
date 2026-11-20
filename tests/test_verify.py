@@ -3,6 +3,8 @@
 import socket
 from urllib.parse import urlsplit
 
+import pytest
+
 from url_jail import VerificationCase, VerificationReport, verify_fetcher
 
 
@@ -29,3 +31,11 @@ def test_verifier_fails_when_callback_connects_before_refusing():
 
     assert not report.passed
     assert all(case.refused and case.connections == 1 for case in report.cases)
+
+
+def test_verifier_rejects_async_callbacks():
+    async def fetch(_url):
+        raise RuntimeError("blocked")
+
+    with pytest.raises(TypeError, match="must be synchronous"):
+        verify_fetcher(fetch)

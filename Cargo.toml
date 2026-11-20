@@ -2,7 +2,7 @@
 name = "url_jail"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "SSRF-safe URL validation for Rust and Python"
 repository = "https://github.com/tenuo-ai/url_jail"

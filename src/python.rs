@@ -3,6 +3,7 @@
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     Error, Policy as RustPolicy, Validated as RustValidated,
@@ -280,14 +281,26 @@ fn py_verify_fetcher(fetch: Bound<'_, PyAny>) -> PyResult<PyVerificationReport> 
     }
 
     let callback = fetch.unbind();
+    let callback_error = Arc::new(Mutex::new(None));
     let verify = || {
-        crate::verify_fetcher(|url| {
+        let callback_error = Arc::clone(&callback_error);
+        crate::verify_fetcher(move |url| {
             let result = Python::attach(|py| {
-                callback
-                    .bind(py)
-                    .call1((url,))
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
+                let result = callback.bind(py).call1((url,));
+                match result {
+                    Ok(value) if value.hasattr("__await__").unwrap_or(false) => {
+                        // Coroutines warn when dropped without being awaited. Close them
+                        // before reporting the synchronous-API contract violation.
+                        let _ = value.call_method0("close");
+                        *callback_error.lock().expect("callback error lock poisoned") = Some(
+                            "fetch must be synchronous; async callbacks and awaitable return values are unsupported"
+                                .to_string(),
+                        );
+                        Err(())
+                    }
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(()),
+                }
             });
             std::future::ready(result)
         })
@@ -301,6 +314,14 @@ fn py_verify_fetcher(fetch: Bound<'_, PyAny>) -> PyResult<PyVerificationReport> 
         runtime.block_on(verify())
     }
     .map_err(|error| UrlJailError::new_err(error.to_string()))?;
+
+    if let Some(message) = callback_error
+        .lock()
+        .expect("callback error lock poisoned")
+        .take()
+    {
+        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(message));
+    }
 
     Ok(report.into())
 }

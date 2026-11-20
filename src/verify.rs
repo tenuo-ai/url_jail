@@ -48,12 +48,27 @@ impl VerificationReport {
     }
 }
 
-async fn listener() -> std::io::Result<(
-    u16,
-    Arc<AtomicUsize>,
-    mpsc::UnboundedReceiver<()>,
-    JoinHandle<()>,
-)> {
+struct ControlledListener {
+    port: u16,
+    connections: Arc<AtomicUsize>,
+    accepted: mpsc::UnboundedReceiver<()>,
+    task: JoinHandle<()>,
+}
+
+impl ControlledListener {
+    async fn stop(&mut self) {
+        self.task.abort();
+        let _ = (&mut self.task).await;
+    }
+}
+
+impl Drop for ControlledListener {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn listener() -> std::io::Result<ControlledListener> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
     let connections = Arc::new(AtomicUsize::new(0));
@@ -65,7 +80,12 @@ async fn listener() -> std::io::Result<(
             let _ = accepted.send(());
         }
     });
-    Ok((port, connections, receiver, task))
+    Ok(ControlledListener {
+        port,
+        connections,
+        accepted: receiver,
+        task,
+    })
 }
 
 async fn run_case<F, Fut, T, E>(
@@ -77,18 +97,18 @@ where
     F: Fn(String) -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
-    let (port, connections, mut accepted, task) = listener().await?;
-    let url = format!("http://{host}:{port}/url-jail-verification");
+    let mut listener = listener().await?;
+    let url = format!("http://{host}:{}/url-jail-verification", listener.port);
     let refused = fetch(url.clone()).await.is_err();
 
     // A callback may return immediately after its TCP handshake. The listener
     // sends an event on accept, so wait for that event rather than relying on a
     // scheduler delay before deciding that no connection was made.
-    if connections.load(Ordering::Relaxed) == 0 {
-        let _ = timeout(Duration::from_millis(100), accepted.recv()).await;
+    if listener.connections.load(Ordering::Relaxed) == 0 {
+        let _ = timeout(Duration::from_millis(100), listener.accepted.recv()).await;
     }
-    task.abort();
-    let _ = task.await;
+    let connections = Arc::clone(&listener.connections);
+    listener.stop().await;
 
     Ok(VerificationCase {
         name,
